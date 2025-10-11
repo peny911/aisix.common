@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+	  <VersionPrefix>1.0.6</VersionPrefix>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Authorizations\**" />
+    <Compile Remove="Db\**" />
+    <Compile Remove="TencentCloud\**" />
+    <EmbeddedResource Remove="Authorizations\**" />
+    <EmbeddedResource Remove="Db\**" />
+    <EmbeddedResource Remove="TencentCloud\**" />
+    <None Remove="Authorizations\**" />
+    <None Remove="Db\**" />
+    <None Remove="TencentCloud\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="AppConfig.cs" />
+    <Compile Remove="Exceptions\StringExtensions.cs" />
+    <Compile Remove="KeyHelper.cs" />
+    <Compile Remove="LoggerType.cs" />
+    <Compile Remove="Redis\RedisClient2.cs" />
+  </ItemGroup>
+  <ItemGroup>
+	<None Include="README.md" Pack="true" PackagePath="\"/>
+    <PackageReference Include="AutoMapper" Version="13.0.1" />
+    <PackageReference Include="IP2Region.Net" Version="2.0.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
+      <TreatAsUsed>true</TreatAsUsed>
+    </PackageReference>
+    <PackageReference Include="NLog" Version="5.3.4" />
+    <PackageReference Include="Pluralize.NET" Version="1.0.2" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.3" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <VersionPrefix>1.0.2</VersionPrefix>
+  </PropertyGroup>
+  <ItemGroup>
+	<None Include="README.md" Pack="true" PackagePath="\" />
+	<PackageReference Include="Aisix.Common" Version="1.0.6" />
+    <PackageReference Include="SqlSugar.IOC" Version="2.0.0" />
+    <PackageReference Include="SqlSugarCore" Version="5.1.4.110" />
+    <PackageReference Include="System.Runtime.Caching" Version="8.0.1" />
+  </ItemGroup>
+</Project>

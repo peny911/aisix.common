@@ -1,0 +1,6 @@
+@Aisix.Common.WebApi.Sample_HostAddress = http://localhost:5133
+
+GET {{Aisix.Common.WebApi.Sample_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
