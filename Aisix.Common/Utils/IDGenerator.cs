@@ -70,11 +70,12 @@ namespace Aisix.Common.Utils
                 .Where(nic => nic.OperationalStatus == OperationalStatus.Up &&
                               nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
                 .Select(nic => nic.GetPhysicalAddress().ToString())
-                .FirstOrDefault();
+                .FirstOrDefault(mac => !string.IsNullOrEmpty(mac));
 
+            // 如果无法获取有效的 MAC 地址，使用机器名称作为备用方案
             if (string.IsNullOrEmpty(macAddress))
             {
-                throw new Exception("未能获取有效的 MAC 地址");
+                macAddress = Environment.MachineName;
             }
 
             // 获取当前进程的 ID 作为区分同机不同服务的标识
