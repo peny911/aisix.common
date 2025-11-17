@@ -89,6 +89,16 @@ namespace Aisix.Common.Redis
         Task<string> ListGetByIndexAsync(string key, long index, int? dbIndex = null);
         Task<long> ListLengthAsync(string key, int? dbIndex = null);
         ITransaction CreateTransaction(int? dbIndex = null);
+
+        /// <summary>
+        /// Set if Not Exists - 只有键不存在时才设置（原子操作）
+        /// </summary>
+        /// <param name="key">键</param>
+        /// <param name="value">值</param>
+        /// <param name="expireMinutes">过期时间（分钟），0 表示不过期</param>
+        /// <param name="dbIndex">数据库索引</param>
+        /// <returns>true=设置成功（键不存在），false=设置失败（键已存在）</returns>
+        Task<bool> SetNxAsync(string key, string value, int expireMinutes = 0, int? dbIndex = null);
         #endregion
     }
 }

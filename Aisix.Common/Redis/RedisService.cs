@@ -213,6 +213,16 @@ namespace Aisix.Common.Redis
                 : await db.StringSetAsync(key, value);
         }
 
+        public async Task<bool> SetNxAsync(string key, string value, int expireMinutes = 0, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+
+            return expireMinutes > 0
+                ? await db.StringSetAsync(key, value, TimeSpan.FromMinutes(expireMinutes), When.NotExists)
+                : await db.StringSetAsync(key, value, when: When.NotExists);
+        }
+
         public long SetAdd(string key, string[] values, int? dbIndex = null)
         {
             key = MergeKey(key);
