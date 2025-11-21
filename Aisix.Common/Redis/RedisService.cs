@@ -736,6 +736,11 @@ namespace Aisix.Common.Redis
             return GetDatabase(dbIndex).CreateTransaction();
         }
 
+        public IBatch CreateBatch(int? dbIndex = null)
+        {
+            return GetDatabase(dbIndex).CreateBatch();
+        }
+
         public void Dispose()
         {
             Dispose(true);
