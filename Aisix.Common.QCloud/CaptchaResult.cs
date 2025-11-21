@@ -14,12 +14,18 @@ namespace Aisix.Common.QCloud
             _options = options;
         }
 
-        public DescribeCaptchaResultResponse Check(string ticket, string randStr) 
+        public DescribeCaptchaResultResponse Check(string ticket, string randStr)
         {
             // 检查ticket是否为空
             if (string.IsNullOrEmpty(ticket))
             {
                 throw new ArgumentException("Ticket cannot be null or empty.", nameof(ticket));
+            }
+
+            // 检查验证码配置是否存在
+            if (_options.captcha == null)
+            {
+                throw new InvalidOperationException("验证码配置 (TencentCloud:captcha) 未配置");
             }
 
             try

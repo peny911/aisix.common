@@ -24,6 +24,11 @@ namespace Aisix.Common.Db
                 throw new ArgumentNullException("请在appsettings.json中配置DBS节点");
             }
 
+            if (dBOptions.MutiDBConns == null || dBOptions.MutiDBConns.Count == 0)
+            {
+                throw new ArgumentException("请在appsettings.json的DBS节点中配置至少一个数据库连接");
+            }
+
             var allCon = dBOptions.MutiDBConns.Where(i => i.Enabled).ToList();
             var listConfig = new List<IocConfig>();
 

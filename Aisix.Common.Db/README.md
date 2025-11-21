@@ -157,6 +157,57 @@ public class OrderService
 
 对于更复杂的初始化需求，可以使用 `Orm.InitializeDatabase` 方法。请参考示例项目了解具体用法。
 
+## 部署注意事项
+
+### Docker 容器部署
+
+本项目依赖 SQLite 原生库，在使用 Docker 部署时需注意：
+
+#### ✅ 推荐使用 Debian 基础镜像
+
+```dockerfile
+# 推荐：使用标准的 Debian 基础镜像
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+```
+
+#### ⚠️ Alpine Linux 镜像说明
+
+如果必须使用 Alpine Linux 镜像，可能会遇到 SQLite 原生库兼容性问题（NETSDK1206 警告）。
+
+```dockerfile
+# 不推荐：Alpine 可能需要额外配置
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+```
+
+**解决方案：**
+
+1. **发布时指定 RID**：
+   ```bash
+   dotnet publish -r linux-musl-x64 --self-contained false
+   ```
+
+2. **或在运行时安装兼容库**：
+   ```dockerfile
+   FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+   RUN apk add --no-cache icu-libs krb5-libs libgcc libintl libssl3 libstdc++ zlib
+   ```
+
+3. **推荐方式：改用 Debian slim 镜像**（镜像略大但兼容性更好）
+
+### NETSDK1206 警告说明
+
+编译时可能会看到以下警告：
+
+```
+warning NETSDK1206: 找到了特定于版本或特定于发行版的运行时标识符: alpine-arm, alpine-arm64, alpine-x64。
+受影响的库: SQLitePCLRaw.lib.e_sqlite3
+```
+
+**这是正常的编译警告**，不影响功能：
+- ✅ 在 Windows/macOS/Linux (Debian/Ubuntu) 环境下可以**忽略**
+- ⚠️ 仅在使用 Alpine Linux Docker 镜像时需要关注
+- 已在项目配置中抑制此警告
+
 ## 许可证
 
 MIT License

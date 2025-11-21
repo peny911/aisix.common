@@ -2,9 +2,9 @@
 {
     public class DBOptions
     {
-        public string MainDB { get; set; }
+        public string? MainDB { get; set; }
         public bool MutiDBEnabled { get; set; }
-        public List<MutiDBConns> MutiDBConns { get; set; }
+        public List<MutiDBConns>? MutiDBConns { get; set; }
         public bool ConsoleSql { get; set; } = false;
     }
     public class MutiDBConns
@@ -17,7 +17,7 @@
         /// <summary>
         /// 连接ID
         /// </summary>
-        public string ConnId { get; set; }
+        public string? ConnId { get; set; }
 
         /// <summary>
         /// 从库执行级别，越大越先执行
@@ -27,7 +27,7 @@
         /// <summary>
         /// 连接字符串
         /// </summary>
-        public string Connection { get; set; }
+        public string? Connection { get; set; }
         /// <summary>
         /// 数据库类型
         /// </summary>

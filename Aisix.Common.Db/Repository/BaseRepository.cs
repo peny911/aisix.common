@@ -13,8 +13,8 @@ namespace Aisix.Common.Db.Repository
 {
     public class BaseRepository<T> : SimpleClient<T>, IBaseRepository<T> where T : class, new()
     {
-        public ITenant itenant = null;//多租户事务
-        public BaseRepository(ISqlSugarClient context = null) : base(context)
+        public ITenant? itenant = null;//多租户事务
+        public BaseRepository(ISqlSugarClient? context = null) : base(context)
         {
             // 不再尝试内部 new 或通过 DbScoped 获取
             var configId = typeof(T).GetCustomAttribute<TenantAttribute>()?.configId;
@@ -176,12 +176,12 @@ namespace Aisix.Common.Db.Repository
         /// </summary>
         /// <param name="where">Expression<Func<T, bool>></param>
         /// <returns></returns>
-        public T GetFirst(Expression<Func<T, bool>> where)
+        public new T GetFirst(Expression<Func<T, bool>> where)
         {
             return Context.Queryable<T>().Where(where).First();
         }
 
-        public async Task<T> GetFirstAsync(Expression<Func<T, bool>> where)
+        public new async Task<T> GetFirstAsync(Expression<Func<T, bool>> where)
         {
             return await Context.Queryable<T>().Where(where).FirstAsync();
         }
@@ -216,10 +216,10 @@ namespace Aisix.Common.Db.Repository
 
             page.Data = Context.Queryable<T>().Where(where)
                 .OrderByIF(!string.IsNullOrEmpty(parm.sort), $"{parm.order_by} {(parm.sort == "desc" ? "desc" : "asc")}")
-                .ToPageList(parm.page_num.Value, parm.page_size.Value, ref totalNumber, ref totalPage);
+                .ToPageList(parm.page_num.GetValueOrDefault(1), parm.page_size.GetValueOrDefault(10), ref totalNumber, ref totalPage);
 
-            page.Pager.PageSize = parm.page_size.Value;
-            page.Pager.PageNum = parm.page_num.Value;
+            page.Pager.PageSize = parm.page_size.GetValueOrDefault(10);
+            page.Pager.PageNum = parm.page_num.GetValueOrDefault(1);
             page.Pager.TotalNumber = totalNumber;
             page.Pager.totalPage = totalPage;
 
@@ -235,10 +235,10 @@ namespace Aisix.Common.Db.Repository
 
             page.Data = await Context.Queryable<T>().Where(where)
                 .OrderByIF(!string.IsNullOrEmpty(parm.sort), $"{parm.order_by} {(parm.sort == "desc" ? "desc" : "asc")}")
-                .ToPageListAsync(parm.page_num.Value, parm.page_size.Value, totalNumber, totalPage);
+                .ToPageListAsync(parm.page_num.GetValueOrDefault(1), parm.page_size.GetValueOrDefault(10), totalNumber, totalPage);
 
-            page.Pager.PageSize = parm.page_size.Value;
-            page.Pager.PageNum = parm.page_num.Value;
+            page.Pager.PageSize = parm.page_size.GetValueOrDefault(10);
+            page.Pager.PageNum = parm.page_num.GetValueOrDefault(1);
             page.Pager.TotalNumber = totalNumber;
             page.Pager.totalPage = totalPage;
 
@@ -289,12 +289,12 @@ namespace Aisix.Common.Db.Repository
         /// </summary>
         /// <param name="parm">T</param>
         /// <returns></returns>
-        public int Update(T parm)
+        public new int Update(T parm)
         {
             return Context.Updateable(parm).RemoveDataCache().ExecuteCommand();
         }
 
-        public async Task<int> UpdateAsync(T parm)
+        public new async Task<int> UpdateAsync(T parm)
         {
             return await Context.Updateable(parm).RemoveDataCache().ExecuteCommandAsync();
         }
@@ -399,12 +399,12 @@ namespace Aisix.Common.Db.Repository
         /// </summary>
         /// <param name="where">过滤条件</param>
         /// <returns></returns>
-        public int Delete(Expression<Func<T, bool>> where)
+        public new int Delete(Expression<Func<T, bool>> where)
         {
             return Context.Deleteable<T>().Where(where).RemoveDataCache().ExecuteCommand();
         }
 
-        public async Task<int> DeleteAsync(Expression<Func<T, bool>> where)
+        public new async Task<int> DeleteAsync(Expression<Func<T, bool>> where)
         {
             return await Context.Deleteable<T>().Where(where).RemoveDataCache().ExecuteCommandAsync();
         }
@@ -521,6 +521,11 @@ namespace Aisix.Common.Db.Repository
         /// <returns></returns>
         public async Task<DbResult<bool>> UseITenantTran(Func<Task> action)
         {
+            if (itenant == null)
+            {
+                throw new InvalidOperationException("ITenant未初始化，无法执行事务操作");
+            }
+
             var resultTran = await itenant.UseTranAsync(async () =>
             {
                 await action();

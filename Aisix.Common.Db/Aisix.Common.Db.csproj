@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <VersionPrefix>1.0.2</VersionPrefix>
+    <!-- 抑制 SQLite Alpine RID 警告 (NETSDK1206) -->
+    <NoWarn>$(NoWarn);NETSDK1206</NoWarn>
   </PropertyGroup>
   <ItemGroup>
 	<None Include="README.md" Pack="true" PackagePath="\" />

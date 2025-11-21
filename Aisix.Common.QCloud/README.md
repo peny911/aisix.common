@@ -93,14 +93,76 @@ public class AccountController : ControllerBase
 
 ## 配置选项
 
-### TencentCloudOptions
+### 配置说明
 
-- `SecretId`: 腾讯云 SecretId
-- `SecretKey`: 腾讯云 SecretKey
-- `Region`: 地域信息
-- `Bucket`: 存储桶名称
-- `CaptchaAppId`: 验证码应用ID
-- `CaptchaAppSecretKey`: 验证码应用密钥
+#### 必需配置
+
+以下配置项在使用腾讯云服务时**必须**提供：
+
+| 配置项 | 类型 | 说明 |
+|--------|------|------|
+| `SecretId` | string | 腾讯云 API 密钥 ID，用于身份验证 |
+| `SecretKey` | string | 腾讯云 API 密钥 Key，用于身份验证 |
+
+#### 可选配置
+
+以下配置项为可选，根据使用的功能决定是否需要配置：
+
+| 配置项 | 类型 | 说明 | 使用场景 |
+|--------|------|------|---------|
+| `captcha` | object | 验证码服务配置 | 使用验证码功能时必需 |
+| `captcha.CaptchaAppId` | ulong | 验证码应用 ID | 验证码服务 |
+| `captcha.AppSecretKey` | string | 验证码应用密钥 | 验证码服务 |
+
+### 配置示例
+
+#### 基础配置（仅使用 STS 临时凭证）
+
+```json
+{
+  "TencentCloud": {
+    "SecretId": "your-secret-id",
+    "SecretKey": "your-secret-key"
+  }
+}
+```
+
+#### 完整配置（包含验证码服务）
+
+```json
+{
+  "TencentCloud": {
+    "SecretId": "your-secret-id",
+    "SecretKey": "your-secret-key",
+    "captcha": {
+      "CaptchaAppId": 123456789,
+      "AppSecretKey": "your-captcha-secret-key"
+    }
+  }
+}
+```
+
+### 配置验证
+
+如果缺少必需的配置项，应用在启动或调用相关服务时会抛出异常并给出明确的错误提示：
+
+- ❌ 缺少 `SecretId` 或 `SecretKey`：无法进行身份验证
+- ❌ 使用验证码功能但未配置 `captcha`：抛出 `InvalidOperationException`
+
+### 安全建议
+
+⚠️ **重要**：不要将敏感配置（SecretId、SecretKey）直接写入源代码或提交到版本控制系统。
+
+推荐做法：
+1. 使用 **用户机密** (User Secrets) 存储开发环境配置
+2. 使用 **环境变量** 存储生产环境配置
+3. 使用 **Azure Key Vault** 或其他密钥管理服务
+
+```bash
+# 使用用户机密（开发环境）
+dotnet user-secrets set "TencentCloud:SecretId" "your-secret-id"
+dotnet user-secrets set "TencentCloud:SecretKey" "your-secret-key"
+```
 
 ## 许可证
 

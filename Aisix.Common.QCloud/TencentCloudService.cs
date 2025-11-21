@@ -24,7 +24,7 @@ namespace Aisix.Common.QCloud
                 Credentials = JsonConvert.DeserializeObject<CredentialsResuslt.CredentialsItem>(credential["Credentials"].ToString()),
                 Expiration = Convert.ToDateTime(credential["Expiration"]).AddHours(8),
                 StartTime = Convert.ToInt32(credential["StartTime"]),
-                RequestId = credential["RequestId"].ToString()
+                RequestId = credential["RequestId"]?.ToString()
             };
 
             return result;

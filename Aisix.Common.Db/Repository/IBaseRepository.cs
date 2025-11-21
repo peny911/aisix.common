@@ -90,8 +90,8 @@ namespace Aisix.Common.Db.Repository
         /// </summary>
         /// <param name="where">Expression<Func<T, bool>></param>
         /// <returns></returns>
-        T GetFirst(Expression<Func<T, bool>> where);
-        Task<T> GetFirstAsync(Expression<Func<T, bool>> where);
+        new T GetFirst(Expression<Func<T, bool>> where);
+        new Task<T> GetFirstAsync(Expression<Func<T, bool>> where);
 
 
         /// <summary>
@@ -136,8 +136,8 @@ namespace Aisix.Common.Db.Repository
         /// </summary>
         /// <param name="parm">T</param>
         /// <returns></returns>
-        int Update(T parm);
-        Task<int> UpdateAsync(T parm);
+        new int Update(T parm);
+        new Task<int> UpdateAsync(T parm);
 
         /// <summary>
         /// 修改一条数据
@@ -201,7 +201,7 @@ namespace Aisix.Common.Db.Repository
         /// </summary>
         /// <param name="where">过滤条件</param>
         /// <returns></returns>
-        Task<int> DeleteAsync(Expression<Func<T, bool>> where);
+        new Task<int> DeleteAsync(Expression<Func<T, bool>> where);
 
         int DeleteSplit(List<T> list);
 
