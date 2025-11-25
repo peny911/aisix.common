@@ -72,10 +72,11 @@ namespace Aisix.Common.Utils
                 .Select(nic => nic.GetPhysicalAddress().ToString())
                 .FirstOrDefault(mac => !string.IsNullOrEmpty(mac));
 
-            // 如果无法获取有效的 MAC 地址，使用机器名称作为备用方案
+            // 如果无法获取 MAC 地址，使用机器名和环境信息作为备用
             if (string.IsNullOrEmpty(macAddress))
             {
-                macAddress = Environment.MachineName;
+                macAddress = $"{Environment.MachineName}-{Environment.OSVersion}";
+                Console.WriteLine($"未能获取有效的 MAC 地址，使用备用标识: {macAddress}");
             }
 
             // 获取当前进程的 ID 作为区分同机不同服务的标识
