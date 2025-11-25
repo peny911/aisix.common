@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- 设置为 true 使用本地项目引用，设置为 false 使用 NuGet 包引用 -->
+    <!-- 打包时使用: dotnet pack -p:UseLocalProjects=false -->
+    <UseLocalProjects Condition="'$(UseLocalProjects)' == ''">true</UseLocalProjects>
+  </PropertyGroup>
+</Project>

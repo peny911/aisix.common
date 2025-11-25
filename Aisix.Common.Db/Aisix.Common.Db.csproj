@@ -10,8 +10,20 @@
     <NoWarn>$(NoWarn);NETSDK1206</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-	<None Include="README.md" Pack="true" PackagePath="\" />
-	<PackageReference Include="Aisix.Common" Version="1.0.6" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- 本地项目引用（开发调试时使用） -->
+  <ItemGroup Condition="'$(UseLocalProjects)' == 'true'">
+    <ProjectReference Include="..\Aisix.Common\Aisix.Common.csproj" />
+  </ItemGroup>
+
+  <!-- NuGet 包引用（打包发布时使用） -->
+  <ItemGroup Condition="'$(UseLocalProjects)' != 'true'">
+    <PackageReference Include="Aisix.Common" Version="1.0.6" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="SqlSugar.IOC" Version="2.0.0" />
     <PackageReference Include="SqlSugarCore" Version="5.1.4.110" />
     <PackageReference Include="System.Runtime.Caching" Version="8.0.1" />
