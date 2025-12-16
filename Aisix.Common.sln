@@ -11,13 +11,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.Common.QCloud", "Aisi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.Common.Tests", "Aisix.Common.Tests\Aisix.Common.Tests.csproj", "{DD9AEA04-7823-D655-631F-0D605E78EC6F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.Common.WebApi.Sample", "Aisix.Common.WebApi.Sample\Aisix.Common.WebApi.Sample.csproj", "{70862E5E-170F-4DB3-83DE-26D00329E13A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.Common.WebApi.Sample", "Sample\Aisix.Common.WebApi.Sample\Aisix.Common.WebApi.Sample.csproj", "{70862E5E-170F-4DB3-83DE-26D00329E13A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.CodeFirst", "Aisix.CodeFirst\Aisix.CodeFirst.csproj", "{A54F2094-57D9-4514-802B-6C88DDD66789}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.DbFirst", "Aisix.DbFirst\Aisix.DbFirst.csproj", "{C5142C61-DB71-42C5-9955-A149F20C02AA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.Common.CodeFirst.Sample", "Aisix.Common.CodeFirst.Sample\Aisix.Common.CodeFirst.Sample.csproj", "{297888FC-176A-48E9-8F88-B15366A58D5F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.Common.CodeFirst.Sample", "Sample\Aisix.Common.CodeFirst.Sample\Aisix.Common.CodeFirst.Sample.csproj", "{297888FC-176A-48E9-8F88-B15366A58D5F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

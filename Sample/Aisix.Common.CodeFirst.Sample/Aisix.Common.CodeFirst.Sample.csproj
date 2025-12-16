@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Aisix.CodeFirst\Aisix.CodeFirst.csproj" />
+    <ProjectReference Include="..\..\Aisix.CodeFirst\Aisix.CodeFirst.csproj" />
     <ProjectReference Include="..\Aisix.Common.WebApi.Sample\Aisix.Common.WebApi.Sample.csproj" />
   </ItemGroup>
 
