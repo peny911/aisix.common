@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.CodeFirst", "Aisix.Co
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.DbFirst", "Aisix.DbFirst\Aisix.DbFirst.csproj", "{C5142C61-DB71-42C5-9955-A149F20C02AA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aisix.Common.CodeFirst.Sample", "Aisix.Common.CodeFirst.Sample\Aisix.Common.CodeFirst.Sample.csproj", "{297888FC-176A-48E9-8F88-B15366A58D5F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -111,6 +113,18 @@ Global
 		{C5142C61-DB71-42C5-9955-A149F20C02AA}.Release|x64.Build.0 = Release|Any CPU
 		{C5142C61-DB71-42C5-9955-A149F20C02AA}.Release|x86.ActiveCfg = Release|Any CPU
 		{C5142C61-DB71-42C5-9955-A149F20C02AA}.Release|x86.Build.0 = Release|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Debug|x64.Build.0 = Debug|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Debug|x86.Build.0 = Debug|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Release|x64.ActiveCfg = Release|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Release|x64.Build.0 = Release|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Release|x86.ActiveCfg = Release|Any CPU
+		{297888FC-176A-48E9-8F88-B15366A58D5F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
