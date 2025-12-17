@@ -23,19 +23,21 @@ namespace Aisix.Common.Redis
             {
                 var configOptions = ConfigurationOptions.Parse(connectionString);
                 configOptions.DefaultDatabase = settings.DefaultDatabase;
-                configOptions.ConnectTimeout = 5000;
-                configOptions.SyncTimeout = 5000;
+                configOptions.ConnectTimeout = 1000;  // 连接超时 1 秒
+                configOptions.SyncTimeout = 1000;     // 同步操作超时 1 秒
+                configOptions.AsyncTimeout = 1000;    // 异步操作超时 1 秒
                 configOptions.AbortOnConnectFail = false;
-                configOptions.ConnectRetry = 3;
+                configOptions.ConnectRetry = 1;       // 重试 1 次
                 _connection = ConnectionMultiplexer.Connect(configOptions);
             }
             else
             {
                 var configOptions = ConfigurationOptions.Parse(connectionString);
-                configOptions.ConnectTimeout = 5000;
-                configOptions.SyncTimeout = 5000;
+                configOptions.ConnectTimeout = 1000;  // 连接超时 1 秒
+                configOptions.SyncTimeout = 1000;     // 同步操作超时 1 秒
+                configOptions.AsyncTimeout = 1000;    // 异步操作超时 1 秒
                 configOptions.AbortOnConnectFail = false;
-                configOptions.ConnectRetry = 3;
+                configOptions.ConnectRetry = 1;       // 重试 1 次
                 _connection = ConnectionMultiplexer.Connect(configOptions);
             }
             
