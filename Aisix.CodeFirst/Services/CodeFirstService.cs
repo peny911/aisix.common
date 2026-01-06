@@ -1256,8 +1256,22 @@ namespace Aisix.CodeFirst.Services
                     return differences;
                 }
 
+                // 检查表注释
+                var tableInfo = _db.DbMaintenance.GetTableInfoList(false)
+                    .FirstOrDefault(t => t.Name.Equals(tableName, StringComparison.OrdinalIgnoreCase));
+                var tableAttr = entityType.GetCustomAttribute<SugarTable>();
+                var entityTableDescription = tableAttr?.TableDescription ?? "";
+                var dbTableDescription = tableInfo?.Description ?? "";
+
+                if (!string.Equals(entityTableDescription, dbTableDescription, StringComparison.Ordinal)
+                    && !string.IsNullOrEmpty(entityTableDescription))
+                {
+                    differences.Add($"~ 表注释变更: \"{dbTableDescription}\" → \"{entityTableDescription}\"");
+                }
+
                 // 获取数据库中的列
                 var dbColumns = _db.DbMaintenance.GetColumnInfosByTableName(tableName, false);
+                var dbColumnDict = dbColumns.ToDictionary(c => c.DbColumnName.ToLower(), c => c);
                 var dbColumnNames = dbColumns.Select(c => c.DbColumnName.ToLower()).ToHashSet();
 
                 // 获取实体中的属性
@@ -1269,10 +1283,24 @@ namespace Aisix.CodeFirst.Services
                 {
                     var columnAttr = prop.GetCustomAttribute<SugarColumn>();
                     var columnName = columnAttr?.ColumnName ?? prop.Name;
+                    var columnNameLower = columnName.ToLower();
 
-                    if (!dbColumnNames.Contains(columnName.ToLower()))
+                    if (!dbColumnNames.Contains(columnNameLower))
                     {
                         differences.Add($"+ 新增字段: {columnName}");
+                    }
+                    else
+                    {
+                        // 检查字段注释
+                        var dbColumn = dbColumnDict[columnNameLower];
+                        var entityDescription = (columnAttr?.ColumnDescription ?? "").Trim();
+                        var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
+
+                        if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal)
+                            && !string.IsNullOrEmpty(entityDescription))
+                        {
+                            differences.Add($"~ 字段注释变更 [{columnName}]: \"{TruncateString(dbDescription, 20)}\" → \"{TruncateString(entityDescription, 20)}\"");
+                        }
                     }
                 }
 
@@ -1297,6 +1325,12 @@ namespace Aisix.CodeFirst.Services
             return differences;
         }
 
+        private string TruncateString(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "...";
+        }
+
         private List<string> GetTableDifferencesForSplit(Type entityType, string sampleTableName)
         {
             var differences = new List<string>();
@@ -1310,8 +1344,22 @@ namespace Aisix.CodeFirst.Services
                     return differences;
                 }
 
+                // 检查表注释
+                var tableInfo = _db.DbMaintenance.GetTableInfoList(false)
+                    .FirstOrDefault(t => t.Name.Equals(sampleTableName, StringComparison.OrdinalIgnoreCase));
+                var tableAttr = entityType.GetCustomAttribute<SugarTable>();
+                var entityTableDescription = tableAttr?.TableDescription ?? "";
+                var dbTableDescription = tableInfo?.Description ?? "";
+
+                if (!string.Equals(entityTableDescription, dbTableDescription, StringComparison.Ordinal)
+                    && !string.IsNullOrEmpty(entityTableDescription))
+                {
+                    differences.Add($"~ 表注释变更: \"{dbTableDescription}\" → \"{entityTableDescription}\"");
+                }
+
                 // 获取数据库中的列
                 var dbColumns = _db.DbMaintenance.GetColumnInfosByTableName(sampleTableName, false);
+                var dbColumnDict = dbColumns.ToDictionary(c => c.DbColumnName.ToLower(), c => c);
                 var dbColumnNames = dbColumns.Select(c => c.DbColumnName.ToLower()).ToHashSet();
 
                 // 获取实体中的属性
@@ -1323,10 +1371,24 @@ namespace Aisix.CodeFirst.Services
                 {
                     var columnAttr = prop.GetCustomAttribute<SugarColumn>();
                     var columnName = columnAttr?.ColumnName ?? prop.Name;
+                    var columnNameLower = columnName.ToLower();
 
-                    if (!dbColumnNames.Contains(columnName.ToLower()))
+                    if (!dbColumnNames.Contains(columnNameLower))
                     {
                         differences.Add($"+ 新增字段: {columnName}");
+                    }
+                    else
+                    {
+                        // 检查字段注释
+                        var dbColumn = dbColumnDict[columnNameLower];
+                        var entityDescription = (columnAttr?.ColumnDescription ?? "").Trim();
+                        var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
+
+                        if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal)
+                            && !string.IsNullOrEmpty(entityDescription))
+                        {
+                            differences.Add($"~ 字段注释变更 [{columnName}]: \"{TruncateString(dbDescription, 20)}\" → \"{TruncateString(entityDescription, 20)}\"");
+                        }
                     }
                 }
 
