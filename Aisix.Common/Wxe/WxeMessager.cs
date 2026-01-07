@@ -1,5 +1,6 @@
-﻿using NLog;
-using System.Net.Http.Json;
+﻿using Newtonsoft.Json;
+using NLog;
+using System.Text;
 
 namespace Aisix.Common.Wxe
 {
@@ -26,15 +27,39 @@ namespace Aisix.Common.Wxe
                 wxe.body = $"【测试】{wxe.body}";
 #endif
                 var client = _httpClientFactory.CreateClient("wxe");
-                var response = await client.PostAsJsonAsync<SendItem>("", new SendItem
+
+                var sendItem = new SendItem
                 {
                     scope = wxe.scope.ToString(),
                     body = wxe.body,
-                });
+                };
+
+                var json = JsonConvert.SerializeObject(sendItem);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await client.PostAsync("", content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return true;
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    // 检查业务状态
+                    if (responseBody.Contains("\"status\":1") || responseBody.Contains("\"status\": 1"))
+                    {
+                        return true;
+                    }
+                    else
+                    {
+                        var errMsg = $"Wxe message business failed. Response: {responseBody}";
+                        Console.WriteLine(errMsg);
+                        _logger.Warn(errMsg);
+                    }
+                }
+                else
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    var errMsg = $"Wxe message request failed. Status: {response.StatusCode}, Response: {responseBody}";
+                    Console.WriteLine(errMsg);
+                    _logger.Error(errMsg);
                 }
             }
             catch (HttpRequestException ex)
