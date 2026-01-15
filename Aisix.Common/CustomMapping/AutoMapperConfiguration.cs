@@ -31,16 +31,25 @@ namespace Aisix.Common.CustomMapping
 
         public static void AddCustomMappingProfile(this IMapperConfigurationExpression config)
         {
-            config.AddCustomMappingProfile(Assembly.GetEntryAssembly());
+            var entryAssembly = Assembly.GetEntryAssembly();
+            if (entryAssembly != null)
+            {
+                config.AddCustomMappingProfile(entryAssembly);
+            }
         }
 
         public static void AddCustomMappingProfile(this IMapperConfigurationExpression config, params Assembly[] assemblies)
         {
             var allTypes = assemblies.SelectMany(a => a.ExportedTypes);
 
-            var list = allTypes.Where(type => type.IsClass && !type.IsAbstract &&
-                type.GetInterfaces().Contains(typeof(IHaveCustomMapping)))
-                .Select(type => (IHaveCustomMapping)Activator.CreateInstance(type));
+            // 筛选实现 IHaveCustomMapping 接口的具体类（非抽象类）
+            // 通过反射创建实例，过滤 null，转为非空集合
+            var list = allTypes
+                .Where(type => type.IsClass && !type.IsAbstract &&
+                    type.GetInterfaces().Contains(typeof(IHaveCustomMapping)))
+                .Select(type => Activator.CreateInstance(type) as IHaveCustomMapping)
+                .Where(instance => instance != null)
+                .Cast<IHaveCustomMapping>();
 
             var profile = new CustomMappingProfile(list);
 

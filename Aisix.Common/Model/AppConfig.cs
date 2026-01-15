@@ -2,6 +2,6 @@
 {
     public class AppConfig
     {
-        public string MaintainServer { get; set; }
+        public string MaintainServer { get; set; } = string.Empty;
     }
 }

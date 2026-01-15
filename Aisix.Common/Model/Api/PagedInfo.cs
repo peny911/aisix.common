@@ -10,13 +10,9 @@ namespace Aisix.Common.Model.Api
     [Serializable]
     public class PagedInfo<T>
     {
-        public PageItemVo Pager { get; set; }
+        public PageItemVo Pager { get; set; } = new();
 
-        public List<T> Data { get; set; }
-
-        public PagedInfo() {
-            this.Pager = new PageItemVo();
-        }
+        public List<T>? Data { get; set; }
     }
 
     public class PageItemVo

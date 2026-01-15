@@ -6,7 +6,7 @@ namespace Aisix.Common.Exceptions
     {
         public HttpStatusCode HttpStatusCode { get; set; }
         public WebApiStatusCode WebApiStatusCode { get; set; }
-        public object AdditionalData { get; set; }
+        public object? AdditionalData { get; set; }
 
         public WebApiException()
             : this(WebApiStatusCode.InternalServerError)
@@ -23,62 +23,62 @@ namespace Aisix.Common.Exceptions
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, string message)
+        public WebApiException(WebApiStatusCode statusCode, string? message)
             : this(statusCode, message, HttpStatusCode.InternalServerError)
         {
         }
 
-        public WebApiException(string message, object additionalData)
+        public WebApiException(string? message, object? additionalData)
             : this(WebApiStatusCode.InternalServerError, message, additionalData)
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, object additionalData)
+        public WebApiException(WebApiStatusCode statusCode, object? additionalData)
             : this(statusCode, null, additionalData)
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, string message, object additionalData)
+        public WebApiException(WebApiStatusCode statusCode, string? message, object? additionalData)
             : this(statusCode, message, HttpStatusCode.InternalServerError, additionalData)
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, string message, HttpStatusCode httpStatusCode)
+        public WebApiException(WebApiStatusCode statusCode, string? message, HttpStatusCode httpStatusCode)
             : this(statusCode, message, httpStatusCode, null)
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, string message, HttpStatusCode httpStatusCode, object additionalData)
+        public WebApiException(WebApiStatusCode statusCode, string? message, HttpStatusCode httpStatusCode, object? additionalData)
             : this(statusCode, message, httpStatusCode, null, additionalData)
         {
         }
 
-        public WebApiException(string message, Exception exception)
+        public WebApiException(string? message, Exception? exception)
             : this(WebApiStatusCode.InternalServerError, message, exception)
         {
         }
 
-        public WebApiException(string message, Exception exception, object additionalData)
+        public WebApiException(string? message, Exception? exception, object? additionalData)
             : this(WebApiStatusCode.InternalServerError, message, exception, additionalData)
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, string message, Exception exception)
+        public WebApiException(WebApiStatusCode statusCode, string? message, Exception? exception)
             : this(statusCode, message, HttpStatusCode.InternalServerError, exception)
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, string message, Exception exception, object additionalData)
+        public WebApiException(WebApiStatusCode statusCode, string? message, Exception? exception, object? additionalData)
             : this(statusCode, message, HttpStatusCode.InternalServerError, exception, additionalData)
         {
         }
 
-        public WebApiException(WebApiStatusCode statusCode, string message, HttpStatusCode httpStatusCode, Exception exception)
+        public WebApiException(WebApiStatusCode statusCode, string? message, HttpStatusCode httpStatusCode, Exception? exception)
             : this(statusCode, message, httpStatusCode, exception, null)
         {
         }
 
-        public WebApiException(WebApiStatusCode apiStatusCode, string message, HttpStatusCode httpStatusCode, Exception exception, object additionalData)
+        public WebApiException(WebApiStatusCode apiStatusCode, string? message, HttpStatusCode httpStatusCode, Exception? exception, object? additionalData)
             : base(message, exception)
         {
             WebApiStatusCode = apiStatusCode;

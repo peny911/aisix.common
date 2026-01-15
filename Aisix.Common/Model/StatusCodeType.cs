@@ -17,9 +17,14 @@ namespace Aisix.Common.Model
             }
 
             Type type = obj.GetType();
-            FieldInfo field = type.GetField(obj.ToString());
-            TextAttribute attribute = (TextAttribute)field.GetCustomAttribute(typeof(TextAttribute));
-            return attribute.Value;
+            FieldInfo? field = type.GetField(obj.ToString());
+            if (field == null)
+            {
+                return string.Empty;
+            }
+
+            TextAttribute? attribute = field.GetCustomAttribute(typeof(TextAttribute)) as TextAttribute;
+            return attribute?.Value ?? string.Empty;
         }
     }
 
