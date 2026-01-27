@@ -57,7 +57,7 @@ namespace Aisix.Common.Utils
                 .Where(x => x.GetValue(obj) != null)
                 // 过滤掉带有[JsonIgnore]特性的属性
                 .Where(x => !Attribute.IsDefined(x, typeof(JsonIgnoreAttribute)))
-                .Select(x => $"{x.Name}={HttpUtility.UrlEncode(x.GetValue(obj).ToString())}"));
+                .Select(x => $"{x.Name}={HttpUtility.UrlEncode(x.GetValue(obj)!.ToString())}"));
         }
     }
 }

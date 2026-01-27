@@ -67,7 +67,7 @@ namespace Aisix.Common.Utils
             if (string.IsNullOrWhiteSpace(input))
                 return false;
 
-            if (Uri.TryCreate(input, UriKind.Absolute, out Uri uriResult))
+            if (Uri.TryCreate(input, UriKind.Absolute, out Uri? uriResult))
             {
                 return uriResult.Scheme == Uri.UriSchemeHttp
                     || uriResult.Scheme == Uri.UriSchemeHttps;

@@ -2,36 +2,62 @@
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 
 namespace Aisix.Common.Utils
 {
     public static class HttpContextUtil
     {
-        private const string HttpContextKey = "MS_HttpContext";
-
-        private const string RemoteEndpointMessage = "System.ServiceModel.Channels.RemoteEndpointMessageProperty";
-
-        public static string GetClientIpAddress(this HttpRequestMessage request)
+        /// <summary>
+        /// 获取客户端 IP 地址
+        /// 优先从 X-Forwarded-For 头获取（适用于反向代理场景）
+        /// </summary>
+        /// <param name="context">HTTP 上下文</param>
+        /// <returns>客户端 IP 地址，获取失败返回 null</returns>
+        public static string? GetClientIpAddress(HttpContext context)
         {
-            if (request.Properties.ContainsKey("MS_HttpContext"))
+            if (context == null) return null;
+
+            // 优先从 X-Forwarded-For 获取（反向代理场景）
+            var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(forwardedFor))
             {
-                dynamic val = request.Properties["MS_HttpContext"];
-                if (val != null)
+                // X-Forwarded-For 可能包含多个 IP，取第一个（原始客户端 IP）
+                var ip = forwardedFor.Split(',')[0].Trim();
+                if (IsIp(ip))
                 {
-                    return val.Request.UserHostAddress;
+                    return ip;
                 }
             }
 
-            if (request.Properties.ContainsKey("System.ServiceModel.Channels.RemoteEndpointMessageProperty"))
+            // 尝试从 X-Real-IP 获取（某些反向代理使用此头）
+            var realIp = context.Request.Headers["X-Real-IP"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(realIp) && IsIp(realIp))
             {
-                dynamic val2 = request.Properties["System.ServiceModel.Channels.RemoteEndpointMessageProperty"];
-                if (val2 != null)
+                return realIp;
+            }
+
+            // 直接从连接获取
+            var remoteIp = context.Connection.RemoteIpAddress;
+            if (remoteIp != null)
+            {
+                // 处理 IPv4 映射的 IPv6 地址
+                if (remoteIp.IsIPv4MappedToIPv6)
                 {
-                    return val2.Address;
+                    return remoteIp.MapToIPv4().ToString();
                 }
+                return remoteIp.ToString();
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 获取客户端 IP 地址（HttpRequest 扩展方法）
+        /// </summary>
+        public static string? GetClientIpAddress(this HttpRequest request)
+        {
+            return GetClientIpAddress(request.HttpContext);
         }
 
         /// <summary>

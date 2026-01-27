@@ -41,7 +41,7 @@
 
         public class WeightedItem<U>
         {
-            public U Item { get; set; }
+            public required U Item { get; set; }
             public double Weight { get; set; }
         }
     }

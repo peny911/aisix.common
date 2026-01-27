@@ -92,8 +92,8 @@ namespace Aisix.Common.Wxe
 
         private class SendItem
         {
-            public string scope { get; set; }
-            public string body { get; set; }
+            public string scope { get; set; } = string.Empty;
+            public string body { get; set; } = string.Empty;
         }
     }
 }

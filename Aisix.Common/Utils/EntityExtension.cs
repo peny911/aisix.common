@@ -55,10 +55,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体</returns>
         public static TSource ToCreate<TSource>(this TSource source, long currentUserId) where TSource : class
         {
-            if (source == null)
-            {
-                return source;
-            }
+            ArgumentNullException.ThrowIfNull(source);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -80,10 +77,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体</returns>
         public static TSource ToUpdate<TSource>(this TSource source, long currentUserId) where TSource : class
         {
-            if (source == null)
-            {
-                return source;
-            }
+            ArgumentNullException.ThrowIfNull(source);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -103,10 +97,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体</returns>
         public static TSource ToDelete<TSource>(this TSource source, long currentUserId) where TSource : class
         {
-            if (source == null)
-            {
-                return source;
-            }
+            ArgumentNullException.ThrowIfNull(source);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -131,10 +122,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体集合</returns>
         public static IEnumerable<TSource> ToCreate<TSource>(this IEnumerable<TSource> sources, long currentUserId) where TSource : class
         {
-            if (sources == null)
-            {
-                return sources;
-            }
+            ArgumentNullException.ThrowIfNull(sources);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -162,10 +150,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体集合</returns>
         public static IEnumerable<TSource> ToUpdate<TSource>(this IEnumerable<TSource> sources, long currentUserId) where TSource : class
         {
-            if (sources == null)
-            {
-                return sources;
-            }
+            ArgumentNullException.ThrowIfNull(sources);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -191,10 +176,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体集合</returns>
         public static IEnumerable<TSource> ToDelete<TSource>(this IEnumerable<TSource> sources, long currentUserId) where TSource : class
         {
-            if (sources == null)
-            {
-                return sources;
-            }
+            ArgumentNullException.ThrowIfNull(sources);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -221,10 +203,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体列表</returns>
         public static List<TSource> ToCreate<TSource>(this List<TSource> sources, long currentUserId) where TSource : class
         {
-            if (sources == null)
-            {
-                return sources;
-            }
+            ArgumentNullException.ThrowIfNull(sources);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -252,10 +231,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体列表</returns>
         public static List<TSource> ToUpdate<TSource>(this List<TSource> sources, long currentUserId) where TSource : class
         {
-            if (sources == null)
-            {
-                return sources;
-            }
+            ArgumentNullException.ThrowIfNull(sources);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;
@@ -281,10 +257,7 @@ namespace Aisix.Common.Utils
         /// <returns>设置后的实体列表</returns>
         public static List<TSource> ToDelete<TSource>(this List<TSource> sources, long currentUserId) where TSource : class
         {
-            if (sources == null)
-            {
-                return sources;
-            }
+            ArgumentNullException.ThrowIfNull(sources);
 
             var cache = GetPropertyCache(typeof(TSource));
             var now = DateTime.Now;

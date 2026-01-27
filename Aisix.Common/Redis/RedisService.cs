@@ -46,17 +46,17 @@ namespace Aisix.Common.Redis
             _connection.ErrorMessage += OnErrorMessage;
         }
 
-        private void OnConnectionFailed(object sender, ConnectionFailedEventArgs e)
+        private void OnConnectionFailed(object? sender, ConnectionFailedEventArgs e)
         {
             Console.WriteLine($"Redis connection failed: {e.FailureType} - {e.Exception?.Message}");
         }
 
-        private void OnConnectionRestored(object sender, ConnectionFailedEventArgs e)
+        private void OnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
         {
             Console.WriteLine($"Redis connection restored: {e.FailureType}");
         }
 
-        private void OnErrorMessage(object sender, RedisErrorEventArgs e)
+        private void OnErrorMessage(object? sender, RedisErrorEventArgs e)
         {
             Console.WriteLine($"Redis error: {e.Message}");
         }
@@ -102,7 +102,7 @@ namespace Aisix.Common.Redis
                 {
                     cursor = scanResult.Keys.First();
 
-                    if (scanResult.TryGetValue(cursor, out string[] keys))
+                    if (scanResult.TryGetValue(cursor, out string[]? keys))
                     {
                         foreach (var key in keys)
                         {
@@ -346,8 +346,8 @@ namespace Aisix.Common.Redis
             {
                 if (!item.Value.IsNullOrEmpty)
                 {
-                    var obj = JsonConvert.DeserializeObject<T>(item.Value);
-                    result.Add(obj);
+                    var obj = JsonConvert.DeserializeObject<T>(item.Value!);
+                    if (obj != null) result.Add(obj);
                 }
             }
 
@@ -363,8 +363,8 @@ namespace Aisix.Common.Redis
             {
                 if (!item.Value.IsNullOrEmpty)
                 {
-                    var obj = JsonConvert.DeserializeObject<T>(item.Value);
-                    result.Add(obj);
+                    var obj = JsonConvert.DeserializeObject<T>(item.Value!);
+                    if (obj != null) result.Add(obj);
                 }
             }
 
@@ -525,7 +525,7 @@ namespace Aisix.Common.Redis
             return result.ToString();
         }
 
-        public string[] HashGet(string key, string[] fields, int? dbIndex = null)
+        public string?[] HashGet(string key, string[] fields, int? dbIndex = null)
         {
             var db = GetDatabase(dbIndex);
             RedisValue[] hashFields = new RedisValue[fields.Length];
@@ -604,7 +604,7 @@ namespace Aisix.Common.Redis
         /// <summary>
         /// 从Set中随机读取
         /// </summary>
-        public string[] SetRandomMembers(string key, int count = 9, int? dbIndex = null)
+        public string?[] SetRandomMembers(string key, int count = 9, int? dbIndex = null)
         {
             key = MergeKey(key);
             var db = GetDatabase(dbIndex);
@@ -719,14 +719,14 @@ namespace Aisix.Common.Redis
                 return parsedResult;
             }
 
-            RedisResult[] results = (RedisResult[])result;
+            RedisResult[] results = (RedisResult[])result!;
 
             // 第一个元素是新的游标
             long newCursor = long.Parse(results[0].ToString());
 
             // 第二个元素是键的数组
-            RedisResult[] keys = (RedisResult[])results[1];
-            string[] keyStrings = Array.ConvertAll(keys, key => (string)key);
+            RedisResult[] keys = (RedisResult[])results[1]!;
+            string[] keyStrings = Array.ConvertAll(keys, key => (string)key!);
 
             parsedResult.Add(newCursor, keyStrings);
 

@@ -34,11 +34,11 @@ namespace Aisix.Common.Redis
         HashEntry[] HashGetAll(string key, int? dbIndex = null);
         public List<decimal> HashValues(string key, int? dbIndex = null);
         string HashGet(string key, string field, int? dbIndex = null);
-        string[] HashGet(string key, string[] fields, int? dbIndex = null);
+        string?[] HashGet(string key, string[] fields, int? dbIndex = null);
         bool HashRemove(string key, string field, int? dbIndex = null);
         long HashRemove(string key, string[] fields, int? dbIndex = null);
         string?[]? SetMembers(string key, int? dbIndex = null);
-        string[] SetRandomMembers(string key, int count = 9, int? dbIndex = null);
+        string?[] SetRandomMembers(string key, int count = 9, int? dbIndex = null);
         bool SetRemove(string key, string member, int? dbIndex = null);
         long SetLength(string key, int? dbIndex = null);
         long ListLength(string key, int? dbIndex = null);

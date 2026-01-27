@@ -3,7 +3,7 @@
     public class MessageItem
     {
         public Scope scope { get; set; }
-        public string body { get; set; }
+        public required string body { get; set; }
     }
 
     public enum Scope

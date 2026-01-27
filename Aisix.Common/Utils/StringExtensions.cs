@@ -91,12 +91,12 @@
                 .Replace("ھ", "ه");//.Replace("ئ", "ی");
         }
 
-        public static string CleanString(this string str)
+        public static string? CleanString(this string str)
         {
             return str.Trim().FixPersianChars().Fa2En().NullIfEmpty();
         }
 
-        public static string NullIfEmpty(this string str)
+        public static string? NullIfEmpty(this string? str)
         {
             return str?.Length == 0 ? null : str;
         }

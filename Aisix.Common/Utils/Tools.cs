@@ -39,7 +39,7 @@ namespace Aisix.Common.Utils
                 IncludeFields = true
             };
             string json = JsonSerializer.Serialize(source, options);
-            return JsonSerializer.Deserialize<T>(json, options);
+            return JsonSerializer.Deserialize<T>(json, options)!;
         }
 
         private static readonly char[] _chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".ToCharArray();
@@ -64,7 +64,7 @@ namespace Aisix.Common.Utils
         /// </summary>
         /// <param name="text">输入的文本行</param>
         /// <returns>匹配到的日期字符串，若未匹配到则返回 null</returns>
-        public static string ExtractDate(string text)
+        public static string? ExtractDate(string text)
         {
             // 定义正则表达式，匹配格式如 "2025-03-24 18:19:05.589"
             string pattern = @"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)";
