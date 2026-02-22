@@ -391,6 +391,10 @@ namespace Aisix.CodeFirst.Services
                     {
                         _db!.CodeFirst.InitTables(entity);
                     }
+
+                    // 创建索引（从实体特性中获取所有索引定义）
+                    CreateIndexesFromEntity(tableName, entity);
+
                     PrintSuccess($"  + {tableName} 更新成功");
                     success++;
                     logEntries.Add($"[OK] {tableName}");
@@ -1316,6 +1320,10 @@ namespace Aisix.CodeFirst.Services
                         differences.Add($"- 删除字段: {dbColumn.DbColumnName}");
                     }
                 }
+
+                // 检查索引差异
+                var indexDifferences = GetIndexDifferences(entityType, tableName);
+                differences.AddRange(indexDifferences);
             }
             catch (Exception ex)
             {
@@ -1323,6 +1331,161 @@ namespace Aisix.CodeFirst.Services
             }
 
             return differences;
+        }
+
+        private List<string> GetIndexDifferences(Type entityType, string tableName)
+        {
+            var differences = new List<string>();
+
+            try
+            {
+                // 获取实体中定义的索引（通过 Attribute 数据）
+                var entityIndexNames = new List<string>();
+
+                // 从属性数据中获取 SugarIndex 特性
+                var attrs = entityType.GetCustomAttributesData();
+
+                foreach (var attr in attrs)
+                {
+                    if (attr.AttributeType.Name == "SugarIndexAttribute")
+                    {
+                        // 构造函数参数：第0个是索引名
+                        if (attr.ConstructorArguments.Count > 0)
+                        {
+                            var indexName = attr.ConstructorArguments[0].Value?.ToString() ?? "";
+                            if (!string.IsNullOrEmpty(indexName))
+                            {
+                                entityIndexNames.Add(indexName);
+                            }
+                        }
+                    }
+                }
+
+                // 获取数据库中的索引列表
+                var dbIndexNames = _db!.DbMaintenance.GetIndexList(tableName)
+                    .Where(name => !name.ToLower().Contains("primary")) // 排除主键索引
+                    .Select(name => name.ToLower())
+                    .ToHashSet();
+
+                // 检查新增的索引
+                foreach (var indexName in entityIndexNames)
+                {
+                    if (!string.IsNullOrEmpty(indexName) && !dbIndexNames.Contains(indexName.ToLower()))
+                    {
+                        differences.Add($"+ 新增索引: {indexName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                differences.Add($"! 索引分析失败: {ex.Message}");
+            }
+
+            return differences;
+        }
+
+        private void CreateIndex(string tableName, Type entityType, string indexName)
+        {
+            try
+            {
+                // 从实体特性中获取索引定义的字段
+                var attrs = entityType.GetCustomAttributesData();
+                foreach (var attr in attrs)
+                {
+                    if (attr.AttributeType.Name == "SugarIndexAttribute")
+                    {
+                        // 获取构造函数参数：IndexName, 字段名1, 字段名2, ...
+                        if (attr.ConstructorArguments.Count > 1)
+                        {
+                            var name = attr.ConstructorArguments[0].Value?.ToString() ?? "";
+                            if (name == indexName)
+                            {
+                                // 获取字段名（从第1个参数开始）
+                                var fieldNames = new List<string>();
+                                for (int i = 1; i < attr.ConstructorArguments.Count; i++)
+                                {
+                                    var fieldValue = attr.ConstructorArguments[i].Value;
+                                    if (fieldValue != null)
+                                    {
+                                        fieldNames.Add(fieldValue.ToString()!);
+                                    }
+                                }
+
+                                if (fieldNames.Count > 0)
+                                {
+                                    var sql = $"ALTER TABLE `{tableName}` ADD INDEX `{indexName}` (`{string.Join("`, `", fieldNames)}`)";
+                                    _db!.Ado.ExecuteCommand(sql);
+                                    Console.WriteLine($"    创建索引: {indexName} on ({string.Join(", ", fieldNames)})");
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    创建索引失败: {indexName}, 错误: {ex.Message}");
+            }
+        }
+
+        private void CreateIndexesFromEntity(string tableName, Type entityType)
+        {
+            try
+            {
+                // 获取数据库中已有的索引
+                var dbIndexes = _db!.DbMaintenance.GetIndexList(tableName)
+                    .Select(i => i.ToLower())
+                    .ToHashSet();
+
+                // 从实体特性中获取所有索引定义
+                var attrs = entityType.GetCustomAttributesData();
+                foreach (var attr in attrs)
+                {
+                    if (attr.AttributeType.Name == "SugarIndexAttribute")
+                    {
+                        // 获取构造函数参数：IndexName, 字段名1, 字段名2, ..., OrderByType
+                        if (attr.ConstructorArguments.Count >= 2)
+                        {
+                            // 第0个是索引名
+                            var indexName = attr.ConstructorArguments[0].Value?.ToString() ?? "";
+                            if (string.IsNullOrEmpty(indexName)) continue;
+
+                            // 检查索引是否已存在
+                            if (dbIndexes.Contains(indexName.ToLower()))
+                            {
+                                Console.WriteLine($"    索引已存在: {indexName}");
+                                continue;
+                            }
+
+                            // 获取字段名（从第1个参数开始，跳过最后两个：OrderByType 和 isUnique）
+                            var fieldNames = new List<string>();
+                            // 字段名是参数1开始，到倒数第3个为止（倒数第2个是OrderByType，倒数第1个是isUnique）
+                            var lastFieldIndex = attr.ConstructorArguments.Count - 3;
+                            for (int i = 1; i <= lastFieldIndex; i++)
+                            {
+                                var arg = attr.ConstructorArguments[i];
+                                var fieldValue = arg.Value;
+                                if (fieldValue != null)
+                                {
+                                    fieldNames.Add(fieldValue.ToString()!);
+                                }
+                            }
+
+                            if (fieldNames.Count > 0)
+                            {
+                                var sql = $"ALTER TABLE `{tableName}` ADD INDEX `{indexName}` (`{string.Join("`, `", fieldNames)}`)";
+                                _db.Ado.ExecuteCommand(sql);
+                                Console.WriteLine($"    创建索引: {indexName} on ({string.Join(", ", fieldNames)})");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    创建索引失败: {ex.Message}");
+            }
         }
 
         private string TruncateString(string value, int maxLength)
@@ -1404,6 +1567,10 @@ namespace Aisix.CodeFirst.Services
                         differences.Add($"- 删除字段: {dbColumn.DbColumnName}");
                     }
                 }
+
+                // 检查索引差异
+                var indexDifferences = GetIndexDifferences(entityType, sampleTableName);
+                differences.AddRange(indexDifferences);
             }
             catch (Exception ex)
             {
