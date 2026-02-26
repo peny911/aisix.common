@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Xml;
 using Aisix.CodeFirst.Extensions;
 using SqlSugar;
 
@@ -16,6 +17,9 @@ namespace Aisix.CodeFirst.Services
         // 实体分类缓存
         private List<Type> _normalEntities = new();
         private List<Type> _splitEntities = new();
+
+        // XML 文档缓存：Key = 程序集名, Value = XML 文档
+        private Dictionary<string, XmlDocument> _xmlDocs = new();
 
         public CodeFirstService(CodeFirstConfiguration configuration)
         {
@@ -154,9 +158,16 @@ namespace Aisix.CodeFirst.Services
                 _splitEntities = allTypes.Where(t => t.GetCustomAttribute<SplitTableAttribute>() != null).ToList();
                 _normalEntities = allTypes.Where(t => t.GetCustomAttribute<SplitTableAttribute>() == null).ToList();
 
+                // 加载 XML 文档
+                LoadXmlDocumentation(assembly);
+
                 Console.WriteLine($"发现 {allTypes.Count} 个实体类：");
                 Console.WriteLine($"  [普通表] 共 {_normalEntities.Count} 个");
                 Console.WriteLine($"  [分表模板] 共 {_splitEntities.Count} 个 (标记 [SplitTable])");
+                if (_xmlDocs.Count > 0)
+                {
+                    Console.WriteLine($"  [XML文档] 已加载 {_xmlDocs.Count} 个程序集的文档 (将自动提取 Summary 作为字段描述)");
+                }
                 Console.WriteLine();
                 Console.WriteLine("注：分表模板也可在「更新普通表结构」中更新其基础表");
                 Console.WriteLine();
@@ -166,6 +177,121 @@ namespace Aisix.CodeFirst.Services
                 PrintError($"加载实体失败: {ex.Message}");
             }
         }
+
+        #region XML 文档加载
+
+        /// <summary>
+        /// 加载程序集的 XML 文档
+        /// </summary>
+        private void LoadXmlDocumentation(Assembly assembly)
+        {
+            try
+            {
+                var assemblyName = assembly.GetName().Name;
+                if (string.IsNullOrEmpty(assemblyName)) return;
+
+                // 尝试从多个位置加载 XML 文件
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var xmlPaths = new[]
+                {
+                    Path.Combine(baseDir, $"{assemblyName}.xml"),
+                    Path.Combine(baseDir, "bin", $"{assemblyName}.xml"),
+                    Path.Combine(baseDir, "..", $"{assemblyName}.xml"),
+                    Path.Combine(baseDir, "..", "..", $"{assemblyName}.xml"),
+                    Path.Combine(baseDir, "..", "..", "..", $"{assemblyName}.xml"),
+                    Path.Combine(baseDir, "..", "..", "..", "..", $"{assemblyName}.xml"),
+                };
+
+                foreach (var xmlPath in xmlPaths)
+                {
+                    var fullPath = Path.GetFullPath(xmlPath);
+                    if (File.Exists(fullPath))
+                    {
+                        var xmlDoc = new XmlDocument();
+                        xmlDoc.Load(fullPath);
+                        _xmlDocs[assemblyName] = xmlDoc;
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+                // XML 文档加载失败不影响主流程
+            }
+        }
+
+        /// <summary>
+        /// 获取属性的 Summary 注释
+        /// </summary>
+        private string? GetPropertySummary(PropertyInfo property)
+        {
+            try
+            {
+                // 查找程序集的 XML 文档
+                var assembly = property.DeclaringType?.Assembly;
+                var assemblyName = assembly?.GetName().Name;
+
+                if (assemblyName == null || !_xmlDocs.TryGetValue(assemblyName, out var xmlDoc))
+                {
+                    return null;
+                }
+
+                // 构建 XPath：//member[@name="P:命名空间.类名.属性名"]
+                var typeName = property.DeclaringType?.FullName;
+                if (string.IsNullOrEmpty(typeName)) return null;
+
+                var memberName = $"P:{typeName}.{property.Name}";
+                var summaryNode = xmlDoc.SelectSingleNode($"//member[@name='{memberName}']/summary");
+
+                if (summaryNode != null)
+                {
+                    // 清理 Summary 内容：去除首尾空白和换行
+                    var summary = summaryNode.InnerText.Trim();
+                    return string.IsNullOrEmpty(summary) ? null : summary;
+                }
+            }
+            catch
+            {
+                // 读取失败返回 null
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 获取类的 Summary 注释
+        /// </summary>
+        private string? GetClassSummary(Type type)
+        {
+            try
+            {
+                var assemblyName = type.Assembly.GetName().Name;
+                if (assemblyName == null || !_xmlDocs.TryGetValue(assemblyName, out var xmlDoc))
+                {
+                    return null;
+                }
+
+                var typeName = type.FullName;
+                if (string.IsNullOrEmpty(typeName)) return null;
+
+                var memberName = $"T:{typeName}";
+                var summaryNode = xmlDoc.SelectSingleNode($"//member[@name='{memberName}']/summary");
+
+                if (summaryNode != null)
+                {
+                    var summary = summaryNode.InnerText.Trim();
+                    return string.IsNullOrEmpty(summary) ? null : summary;
+                }
+            }
+            catch
+            {
+                // 读取失败返回 null
+            }
+
+            return null;
+        }
+
+        #endregion
 
         #endregion
 
@@ -394,6 +520,9 @@ namespace Aisix.CodeFirst.Services
 
                     // 创建索引（从实体特性中获取所有索引定义）
                     CreateIndexesFromEntity(tableName, entity);
+
+                    // 同步字段注释（从 ColumnDescription 或 Summary）
+                    SyncColumnComments(tableName, entity);
 
                     PrintSuccess($"  + {tableName} 更新成功");
                     success++;
@@ -1013,8 +1142,8 @@ namespace Aisix.CodeFirst.Services
                 }
             }
 
-            // 添加注释
-            var description = columnAttr?.ColumnDescription;
+            // 添加注释（优先使用 ColumnDescription，其次使用 Summary）
+            var description = GetColumnDescription(prop, columnAttr);
             if (!string.IsNullOrEmpty(description))
             {
                 sb.Append($" COMMENT '{description.Replace("'", "\\'")}'");
@@ -1198,8 +1327,32 @@ namespace Aisix.CodeFirst.Services
 
         private string GetTableDescription(Type entityType)
         {
-            // 尝试从 XML 注释获取描述，这里简化处理
-            return "";
+            // 优先使用 SugarTable 的 TableDescription
+            var tableAttr = entityType.GetCustomAttribute<SugarTable>();
+            if (!string.IsNullOrEmpty(tableAttr?.TableDescription))
+            {
+                return tableAttr.TableDescription;
+            }
+
+            // 尝试从 XML 注释获取 Summary
+            var summary = GetClassSummary(entityType);
+            return summary ?? "";
+        }
+
+        /// <summary>
+        /// 获取字段描述：优先使用 ColumnDescription，其次使用 Summary
+        /// </summary>
+        private string GetColumnDescription(PropertyInfo prop, SugarColumn? columnAttr)
+        {
+            // 优先使用 ColumnDescription
+            if (!string.IsNullOrEmpty(columnAttr?.ColumnDescription))
+            {
+                return columnAttr.ColumnDescription;
+            }
+
+            // 尝试从 XML Summary 获取
+            var summary = GetPropertySummary(prop);
+            return summary ?? "";
         }
 
         private int GetSplitTableCount(Type entityType)
@@ -1295,9 +1448,9 @@ namespace Aisix.CodeFirst.Services
                     }
                     else
                     {
-                        // 检查字段注释
+                        // 检查字段注释（优先使用 ColumnDescription，其次使用 Summary）
                         var dbColumn = dbColumnDict[columnNameLower];
-                        var entityDescription = (columnAttr?.ColumnDescription ?? "").Trim();
+                        var entityDescription = GetColumnDescription(prop, columnAttr).Trim();
                         var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
 
                         if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal)
@@ -1488,6 +1641,66 @@ namespace Aisix.CodeFirst.Services
             }
         }
 
+        /// <summary>
+        /// 同步字段注释到数据库（从 ColumnDescription 或 Summary）
+        /// </summary>
+        private void SyncColumnComments(string tableName, Type entityType)
+        {
+            try
+            {
+                // 获取数据库中的列信息
+                var dbColumns = _db!.DbMaintenance.GetColumnInfosByTableName(tableName, false);
+                var dbColumnDict = dbColumns.ToDictionary(c => c.DbColumnName.ToLower(), c => c);
+
+                // 获取实体中的属性
+                var properties = entityType.GetProperties()
+                    .Where(p => p.GetCustomAttribute<SugarColumn>()?.IsIgnore != true)
+                    .ToList();
+
+                int updated = 0;
+                foreach (var prop in properties)
+                {
+                    var columnAttr = prop.GetCustomAttribute<SugarColumn>();
+                    var columnName = columnAttr?.ColumnName ?? prop.Name;
+                    var columnNameLower = columnName.ToLower();
+
+                    if (!dbColumnDict.ContainsKey(columnNameLower))
+                    {
+                        continue; // 新字段会在 InitTables 时创建
+                    }
+
+                    // 获取字段描述（优先使用 ColumnDescription，其次使用 Summary）
+                    var entityDescription = GetColumnDescription(prop, columnAttr);
+                    if (string.IsNullOrEmpty(entityDescription))
+                    {
+                        continue; // 没有描述则跳过
+                    }
+
+                    var dbColumn = dbColumnDict[columnNameLower];
+                    var dbDescription = dbColumn.ColumnDescription ?? "";
+
+                    // 只有描述发生变化时才更新
+                    if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal))
+                    {
+                        // 使用 SQL 语句修改字段注释
+                        var escapedDesc = entityDescription.Replace("'", "''");
+                        var sql = $"ALTER TABLE `{tableName}` MODIFY COLUMN `{columnName}` {dbColumn.DataType} COMMENT '{escapedDesc}'";
+                        _db!.Ado.ExecuteCommand(sql);
+                        updated++;
+                    }
+                }
+
+                if (updated > 0)
+                {
+                    Console.WriteLine($"    同步字段注释: {updated} 个");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    同步字段注释失败: {ex.Message}");
+            }
+        }
+
         private string TruncateString(string value, int maxLength)
         {
             if (string.IsNullOrEmpty(value)) return "";
@@ -1542,9 +1755,9 @@ namespace Aisix.CodeFirst.Services
                     }
                     else
                     {
-                        // 检查字段注释
+                        // 检查字段注释（优先使用 ColumnDescription，其次使用 Summary）
                         var dbColumn = dbColumnDict[columnNameLower];
-                        var entityDescription = (columnAttr?.ColumnDescription ?? "").Trim();
+                        var entityDescription = GetColumnDescription(prop, columnAttr).Trim();
                         var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
 
                         if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal)
