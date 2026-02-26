@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Xml;
 using Aisix.CodeFirst.Extensions;
 using SqlSugar;
@@ -1517,13 +1518,19 @@ namespace Aisix.CodeFirst.Services
                 // 获取数据库中的索引列表
                 var dbIndexNames = _db!.DbMaintenance.GetIndexList(tableName)
                     .Where(name => !name.ToLower().Contains("primary")) // 排除主键索引
-                    .Select(name => name.ToLower())
+                    .ToList();
+
+                // 规范化数据库索引名（去掉分表名后缀），用于对比
+                // 同时去掉末尾的下划线，以便与实体中定义的索引名匹配
+                var normalizedDbIndexes = dbIndexNames
+                    .Select(name => NormalizeIndexName(name, tableName).TrimEnd('_').ToLower())
                     .ToHashSet();
 
                 // 检查新增的索引
                 foreach (var indexName in entityIndexNames)
                 {
-                    if (!string.IsNullOrEmpty(indexName) && !dbIndexNames.Contains(indexName.ToLower()))
+                    var normalizedEntityIndex = indexName.TrimEnd('_').ToLower();
+                    if (!string.IsNullOrEmpty(indexName) && !normalizedDbIndexes.Contains(normalizedEntityIndex))
                     {
                         differences.Add($"+ 新增索引: {indexName}");
                     }
@@ -1535,6 +1542,34 @@ namespace Aisix.CodeFirst.Services
             }
 
             return differences;
+        }
+
+        /// <summary>
+        /// 规范化数据库索引名，去掉分表名后缀
+        /// 例如：uniq_minute_sspadx_ssp_dashboard_minute_20260201 -> uniq_minute_ssp
+        /// </summary>
+        private string NormalizeIndexName(string dbIndexName, string tableName)
+        {
+            // 方法1：去掉索引名末尾的完整分表名（如 _20260201 后缀）
+            // 例如：uniq_minute_ssp_adx_ssp_dashboard_minute_20260201 -> uniq_minute_ssp_adx_ssp_dashboard_minute
+            if (dbIndexName.EndsWith(tableName, StringComparison.OrdinalIgnoreCase))
+            {
+                var normalized = dbIndexName.Substring(0, dbIndexName.Length - tableName.Length).TrimEnd('_');
+                // 继续去掉可能的日期后缀
+                normalized = Regex.Replace(normalized, @"_\d{6,8}$", "");
+                return normalized;
+            }
+
+            // 方法2：处理没有分隔符的情况（索引名直接拼接表名）
+            // 例如：uniq_minute_sspadx_ssp_dashboard_minute_20260201 -> uniq_minute_ssp
+            // 提取索引名前缀（到表名开头为止）
+            var tableIndex = dbIndexName.IndexOf(tableName, StringComparison.OrdinalIgnoreCase);
+            if (tableIndex > 0)
+            {
+                return dbIndexName.Substring(0, tableIndex).TrimEnd('_');
+            }
+
+            return dbIndexName;
         }
 
         private void CreateIndex(string tableName, Type entityType, string indexName)
