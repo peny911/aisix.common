@@ -187,6 +187,19 @@ namespace Aisix.Common.Db.Repository
         }
 
         /// <summary>
+        /// 获得一条数据（带排序）
+        /// </summary>
+        public T GetFirst(Expression<Func<T, bool>> where, Expression<Func<T, object>> orderBy, OrderByType orderByType = OrderByType.Asc)
+        {
+            return Context.Queryable<T>().Where(where).OrderBy(orderBy, orderByType).First();
+        }
+
+        public async Task<T> GetFirstAsync(Expression<Func<T, bool>> where, Expression<Func<T, object>> orderBy, OrderByType orderByType = OrderByType.Asc)
+        {
+            return await Context.Queryable<T>().Where(where).OrderBy(orderBy, orderByType).FirstAsync();
+        }
+
+        /// <summary>
         /// 获得一条数据
         /// </summary>
         /// <param name="parm">string</param>

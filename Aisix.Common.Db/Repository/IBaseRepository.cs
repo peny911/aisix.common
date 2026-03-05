@@ -93,6 +93,15 @@ namespace Aisix.Common.Db.Repository
         new T GetFirst(Expression<Func<T, bool>> where);
         new Task<T> GetFirstAsync(Expression<Func<T, bool>> where);
 
+        /// <summary>
+        /// 获得一条数据（带排序）
+        /// </summary>
+        /// <param name="where">条件表达式</param>
+        /// <param name="orderBy">排序字段</param>
+        /// <param name="orderByType">排序方式</param>
+        /// <returns></returns>
+        T GetFirst(Expression<Func<T, bool>> where, Expression<Func<T, object>> orderBy, OrderByType orderByType = OrderByType.Asc);
+        Task<T> GetFirstAsync(Expression<Func<T, bool>> where, Expression<Func<T, object>> orderBy, OrderByType orderByType = OrderByType.Asc);
 
         /// <summary>
         /// 获得一条数据
