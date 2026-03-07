@@ -1546,30 +1546,40 @@ namespace Aisix.CodeFirst.Services
 
         /// <summary>
         /// 规范化数据库索引名，去掉分表名后缀
-        /// 例如：uniq_minute_sspadx_ssp_dashboard_minute_20260201 -> uniq_minute_ssp
+        /// 只有分表索引（带日期后缀）才需要规范化，普通表索引直接返回原名
+        /// 例如：idx_status_ssp_placement_20260201 -> idx_status（分表索引）
+        /// 例如：uk_ssp_placement_key -> uk_ssp_placement_key（普通表索引，不变）
         /// </summary>
         private string NormalizeIndexName(string dbIndexName, string tableName)
         {
-            // 方法1：去掉索引名末尾的完整分表名（如 _20260201 后缀）
-            // 例如：uniq_minute_ssp_adx_ssp_dashboard_minute_20260201 -> uniq_minute_ssp_adx_ssp_dashboard_minute
-            if (dbIndexName.EndsWith(tableName, StringComparison.OrdinalIgnoreCase))
+            // 检查是否有日期后缀（6-8位数字）
+            var datePattern = @"_\d{6,8}$";
+            if (!Regex.IsMatch(dbIndexName, datePattern))
             {
-                var normalized = dbIndexName.Substring(0, dbIndexName.Length - tableName.Length).TrimEnd('_');
-                // 继续去掉可能的日期后缀
-                normalized = Regex.Replace(normalized, @"_\d{6,8}$", "");
-                return normalized;
+                // 没有日期后缀，是普通表索引，直接返回原名
+                return dbIndexName;
             }
 
-            // 方法2：处理没有分隔符的情况（索引名直接拼接表名）
-            // 例如：uniq_minute_sspadx_ssp_dashboard_minute_20260201 -> uniq_minute_ssp
-            // 提取索引名前缀（到表名开头为止）
-            var tableIndex = dbIndexName.IndexOf(tableName, StringComparison.OrdinalIgnoreCase);
+            // 有日期后缀，是分表索引，需要去掉表名和日期后缀
+            // 例如：idx_status_ssp_placement_20260201 -> idx_status
+
+            // 先去掉日期后缀
+            var withoutDate = Regex.Replace(dbIndexName, datePattern, "");
+
+            // 再去掉表名后缀
+            if (withoutDate.EndsWith(tableName, StringComparison.OrdinalIgnoreCase))
+            {
+                return withoutDate.Substring(0, withoutDate.Length - tableName.Length).TrimEnd('_');
+            }
+
+            // 处理表名在中间的情况
+            var tableIndex = withoutDate.IndexOf(tableName, StringComparison.OrdinalIgnoreCase);
             if (tableIndex > 0)
             {
-                return dbIndexName.Substring(0, tableIndex).TrimEnd('_');
+                return withoutDate.Substring(0, tableIndex).TrimEnd('_');
             }
 
-            return dbIndexName;
+            return withoutDate;
         }
 
         private void CreateIndex(string tableName, Type entityType, string indexName)
