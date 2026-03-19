@@ -674,6 +674,29 @@ namespace Aisix.Common.Redis
         {
             return await GetDatabase(dbIndex).ListLengthAsync(MergeKey(key));
         }
+
+        #region HyperLogLog 方法
+        /// <summary>
+        /// 添加元素到 HyperLogLog（自动去重，固定内存约12KB）
+        /// </summary>
+        public async Task<bool> HyperLogLogAddAsync(string key, string[] values, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            var redisValues = Array.ConvertAll(values, item => (RedisValue)item);
+            return await db.HyperLogLogAddAsync(key, redisValues);
+        }
+
+        /// <summary>
+        /// 获取 HyperLogLog 的基数估计值
+        /// </summary>
+        public async Task<long> HyperLogLogLengthAsync(string key, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.HyperLogLogLengthAsync(key);
+        }
+        #endregion
         #endregion
 
         #region Private methods

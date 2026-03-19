@@ -100,6 +100,25 @@ namespace Aisix.Common.Redis
         /// <param name="dbIndex">数据库索引</param>
         /// <returns>true=设置成功（键不存在），false=设置失败（键已存在）</returns>
         Task<bool> SetNxAsync(string key, string value, int expireMinutes = 0, int? dbIndex = null);
+
+        #region HyperLogLog 方法
+        /// <summary>
+        /// 添加元素到 HyperLogLog（自动去重，固定内存约12KB）
+        /// </summary>
+        /// <param name="key">键</param>
+        /// <param name="values">值数组</param>
+        /// <param name="dbIndex">数据库索引</param>
+        /// <returns>如果至少添加了一个新元素返回 true</returns>
+        Task<bool> HyperLogLogAddAsync(string key, string[] values, int? dbIndex = null);
+
+        /// <summary>
+        /// 获取 HyperLogLog 的基数估计值
+        /// </summary>
+        /// <param name="key">键</param>
+        /// <param name="dbIndex">数据库索引</param>
+        /// <returns>基数估计值（约 0.81% 误差率）</returns>
+        Task<long> HyperLogLogLengthAsync(string key, int? dbIndex = null);
+        #endregion
         #endregion
     }
 }
