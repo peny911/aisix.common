@@ -269,6 +269,8 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine("// </auto-generated>");
                 sb.AppendLine("//------------------------------------------------------------------------------");
                 sb.AppendLine();
+                sb.AppendLine("#nullable enable");
+                sb.AppendLine();
                 sb.AppendLine("using SqlSugar;");
                 sb.AppendLine("using System;");
                 sb.AppendLine();
@@ -426,6 +428,8 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine($"//     author {_config.Author}");
                 sb.AppendLine("// </auto-generated>");
                 sb.AppendLine("//------------------------------------------------------------------------------");
+                sb.AppendLine("#nullable enable");
+                sb.AppendLine();
                 sb.AppendLine($"using {_config.GetEntityNamespace()};");
                 sb.AppendLine("using System.Collections.Generic;");
                 sb.AppendLine("using System.Threading.Tasks;");
@@ -494,6 +498,8 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine($"//     author {_config.Author}");
                 sb.AppendLine("// </auto-generated>");
                 sb.AppendLine("//------------------------------------------------------------------------------");
+                sb.AppendLine("#nullable enable");
+                sb.AppendLine();
                 sb.AppendLine($"using {_config.GetEntityNamespace()};");
                 sb.AppendLine("using System.Collections.Generic;");
                 sb.AppendLine("using System.Threading.Tasks;");
