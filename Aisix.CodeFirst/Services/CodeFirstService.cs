@@ -1035,7 +1035,7 @@ namespace Aisix.CodeFirst.Services
                     .Where(p => p.GetCustomAttribute<SugarColumn>()?.IsIgnore != true)
                     .ToList();
 
-                // 找出新增的字段及其应该在的位置
+                // 找出新增和变更的字段
                 string? previousColumn = null;
                 foreach (var prop in properties)
                 {
@@ -1044,13 +1044,27 @@ namespace Aisix.CodeFirst.Services
 
                     if (!dbColumnDict.ContainsKey(columnName.ToLower()))
                     {
-                        // 这是新字段，生成 ALTER TABLE ADD COLUMN ... AFTER ...
+                        // 新字段
                         var columnDef = GenerateColumnDefinition(prop, columnAttr);
 
                         foreach (var tableName in tableNames)
                         {
                             var afterClause = previousColumn != null ? $" AFTER `{previousColumn}`" : " FIRST";
                             sqlList.Add($"ALTER TABLE `{tableName}` ADD COLUMN {columnDef}{afterClause};");
+                        }
+                    }
+                    else
+                    {
+                        // 已有字段，检查是否需要修改
+                        var dbColumn = dbColumnDict[columnName.ToLower()];
+                        var columnDiffs = CompareColumnAttributes(prop, columnAttr, dbColumn);
+                        if (columnDiffs.Count > 0)
+                        {
+                            var columnDef = GenerateColumnDefinition(prop, columnAttr);
+                            foreach (var tableName in tableNames)
+                            {
+                                sqlList.Add($"ALTER TABLE `{tableName}` MODIFY COLUMN {columnDef};");
+                            }
                         }
                     }
 
@@ -1449,16 +1463,11 @@ namespace Aisix.CodeFirst.Services
                     }
                     else
                     {
-                        // 检查字段注释（优先使用 ColumnDescription，其次使用 Summary）
                         var dbColumn = dbColumnDict[columnNameLower];
-                        var entityDescription = GetColumnDescription(prop, columnAttr).Trim();
-                        var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
 
-                        if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal)
-                            && !string.IsNullOrEmpty(entityDescription))
-                        {
-                            differences.Add($"~ 字段注释变更 [{columnName}]: \"{TruncateString(dbDescription, 20)}\" → \"{TruncateString(entityDescription, 20)}\"");
-                        }
+                        // 检查字段类型/长度/可空性变更
+                        var columnDiffs = CompareColumnAttributes(prop, columnAttr, dbColumn);
+                        differences.AddRange(columnDiffs);
                     }
                 }
 
@@ -1746,6 +1755,68 @@ namespace Aisix.CodeFirst.Services
             }
         }
 
+        /// <summary>
+        /// 比较实体字段属性与数据库字段的差异（类型、长度、可空性、注释）
+        /// </summary>
+        private List<string> CompareColumnAttributes(PropertyInfo prop, SugarColumn? columnAttr, DbColumnInfo dbColumn)
+        {
+            var diffs = new List<string>();
+            var columnName = columnAttr?.ColumnName ?? prop.Name;
+            var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
+            // 检查字段长度变更
+            var entityLength = columnAttr?.Length ?? 0;
+            if (entityLength > 0 && propType == typeof(string))
+            {
+                var dbLength = dbColumn.Length;
+                if (entityLength != dbLength)
+                {
+                    diffs.Add($"~ 字段长度变更 [{columnName}]: {dbLength} → {entityLength}");
+                }
+            }
+
+            // 检查可空性变更
+            var entityNullable = columnAttr?.IsNullable ?? Nullable.GetUnderlyingType(prop.PropertyType) != null;
+            if (entityNullable != dbColumn.IsNullable)
+            {
+                var from = dbColumn.IsNullable ? "可空" : "非空";
+                var to = entityNullable ? "可空" : "非空";
+                diffs.Add($"~ 字段可空性变更 [{columnName}]: {from} → {to}");
+            }
+
+            // 检查字段类型变更（仅在指定了 ColumnDataType 时比较）
+            if (!string.IsNullOrEmpty(columnAttr?.ColumnDataType))
+            {
+                var entityDataType = columnAttr!.ColumnDataType.ToLower();
+                var dbDataType = dbColumn.DataType?.ToLower() ?? "";
+                if (!string.Equals(entityDataType, dbDataType, StringComparison.OrdinalIgnoreCase))
+                {
+                    diffs.Add($"~ 字段类型变更 [{columnName}]: {dbColumn.DataType} → {columnAttr.ColumnDataType}");
+                }
+            }
+
+            // 检查小数精度变更（decimal 类型）
+            if (propType == typeof(decimal) && columnAttr != null)
+            {
+                var entityDecimalDigits = columnAttr.DecimalDigits;
+                if (entityDecimalDigits > 0 && dbColumn.Scale != entityDecimalDigits)
+                {
+                    diffs.Add($"~ 字段精度变更 [{columnName}]: Scale {dbColumn.Scale} → {entityDecimalDigits}");
+                }
+            }
+
+            // 检查字段注释变更
+            var entityDescription = GetColumnDescription(prop, columnAttr).Trim();
+            var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
+            if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal)
+                && !string.IsNullOrEmpty(entityDescription))
+            {
+                diffs.Add($"~ 字段注释变更 [{columnName}]: \"{TruncateString(dbDescription, 20)}\" → \"{TruncateString(entityDescription, 20)}\"");
+            }
+
+            return diffs;
+        }
+
         private string TruncateString(string value, int maxLength)
         {
             if (string.IsNullOrEmpty(value)) return "";
@@ -1800,16 +1871,11 @@ namespace Aisix.CodeFirst.Services
                     }
                     else
                     {
-                        // 检查字段注释（优先使用 ColumnDescription，其次使用 Summary）
                         var dbColumn = dbColumnDict[columnNameLower];
-                        var entityDescription = GetColumnDescription(prop, columnAttr).Trim();
-                        var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
 
-                        if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal)
-                            && !string.IsNullOrEmpty(entityDescription))
-                        {
-                            differences.Add($"~ 字段注释变更 [{columnName}]: \"{TruncateString(dbDescription, 20)}\" → \"{TruncateString(entityDescription, 20)}\"");
-                        }
+                        // 检查字段类型/长度/可空性变更
+                        var columnDiffs = CompareColumnAttributes(prop, columnAttr, dbColumn);
+                        differences.AddRange(columnDiffs);
                     }
                 }
 
