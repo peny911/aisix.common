@@ -1,7 +1,9 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Xml;
+using Aisix.CodeFirst.Dialects;
 using Aisix.CodeFirst.Extensions;
+using Aisix.Common.Db;
 using SqlSugar;
 
 namespace Aisix.CodeFirst.Services
@@ -12,6 +14,7 @@ namespace Aisix.CodeFirst.Services
         private readonly Dictionary<string, EnvironmentSettings> _environments;
 
         private ISqlSugarClient? _db;
+        private IDatabaseDialect? _dialect;
         private EnvironmentSettings? _currentEnv;
         private string _currentEnvName = string.Empty;
 
@@ -111,6 +114,7 @@ namespace Aisix.CodeFirst.Services
             try
             {
                 _db = SqlSugarExtensions.CreateSqlSugarClient(_currentEnv);
+                _dialect = DatabaseDialectFactory.Create(_currentEnv.DbType);
                 PrintSuccess($"已连接到 {_currentEnv.Description}");
                 Console.WriteLine();
                 return true;
@@ -504,6 +508,31 @@ namespace Aisix.CodeFirst.Services
                         continue;
                     }
 
+                    // PostgreSQL 跨类型家族变更经常需要 USING 显式转换。
+                    // 但如果表是空的，可以直接放行，让数据库在无数据场景下完成改列。
+                    var blockingTypeChanges = GetBlockingPostgresTypeChanges(entity, tableName);
+                    if (blockingTypeChanges.Count > 0)
+                    {
+                        var reason = string.Join("；", blockingTypeChanges);
+                        PrintError($"  x {tableName} 更新已阻止: {reason}");
+                        failed++;
+                        logEntries.Add($"[BLOCK] {tableName} - {reason}");
+                        continue;
+                    }
+
+                    // PostgreSQL 空表优先走我们自己的迁移 SQL，避免 SqlSugar 在现有表上重复补主键/危险改列。
+                    if (TryApplyPostgresEmptyTableMigration(entity, tableName))
+                    {
+                        CreateIndexesFromEntity(tableName, entity);
+                        SyncColumnComments(tableName, entity);
+                        RepairPostgresIdentityDefaults(tableName, entity);
+
+                        PrintSuccess($"  + {tableName} 更新成功");
+                        success++;
+                        logEntries.Add($"[OK] {tableName} (empty-table migration)");
+                        continue;
+                    }
+
                     // 执行更新
                     var isSplitTemplate = _splitEntities.Contains(entity);
                     if (isSplitTemplate)
@@ -524,6 +553,9 @@ namespace Aisix.CodeFirst.Services
 
                     // 同步字段注释（从 ColumnDescription 或 Summary）
                     SyncColumnComments(tableName, entity);
+
+                    // PostgreSQL: 修复已存在表的 identity/sequence 默认值
+                    RepairPostgresIdentityDefaults(tableName, entity);
 
                     PrintSuccess($"  + {tableName} 更新成功");
                     success++;
@@ -1044,13 +1076,9 @@ namespace Aisix.CodeFirst.Services
 
                     if (!dbColumnDict.ContainsKey(columnName.ToLower()))
                     {
-                        // 新字段
-                        var columnDef = GenerateColumnDefinition(prop, columnAttr);
-
                         foreach (var tableName in tableNames)
                         {
-                            var afterClause = previousColumn != null ? $" AFTER `{previousColumn}`" : " FIRST";
-                            sqlList.Add($"ALTER TABLE `{tableName}` ADD COLUMN {columnDef}{afterClause};");
+                            sqlList.AddRange(GenerateAddColumnMigrationSql(tableName, prop, columnAttr, previousColumn));
                         }
                     }
                     else
@@ -1060,10 +1088,9 @@ namespace Aisix.CodeFirst.Services
                         var columnDiffs = CompareColumnAttributes(prop, columnAttr, dbColumn);
                         if (columnDiffs.Count > 0)
                         {
-                            var columnDef = GenerateColumnDefinition(prop, columnAttr);
                             foreach (var tableName in tableNames)
                             {
-                                sqlList.Add($"ALTER TABLE `{tableName}` MODIFY COLUMN {columnDef};");
+                                sqlList.AddRange(GenerateAlterColumnMigrationSql(tableName, prop, columnAttr, dbColumn));
                             }
                         }
                     }
@@ -1082,7 +1109,7 @@ namespace Aisix.CodeFirst.Services
                     {
                         foreach (var tableName in tableNames)
                         {
-                            sqlList.Add($"-- [危险] ALTER TABLE `{tableName}` DROP COLUMN `{dbColumn.DbColumnName}`;");
+                            sqlList.Add($"-- [危险] ALTER TABLE {QuoteIdentifier(tableName)} DROP COLUMN {QuoteIdentifier(dbColumn.DbColumnName)};");
                         }
                     }
                 }
@@ -1095,76 +1122,224 @@ namespace Aisix.CodeFirst.Services
             return sqlList;
         }
 
+        private List<string> GenerateAddColumnMigrationSql(string tableName, PropertyInfo prop, SugarColumn? columnAttr, string? previousColumn)
+        {
+            // PostgreSQL 不支持 MySQL 的 AFTER/FIRST 语法，按方言拆分生成。
+            if (_currentEnv?.DbType == DataBaseType.PostgreSQL)
+            {
+                return GeneratePostgresAddColumnMigrationSql(tableName, prop, columnAttr);
+            }
+
+            var columnDef = GenerateColumnDefinition(prop, columnAttr);
+            var afterClause = previousColumn != null ? $" AFTER {QuoteIdentifier(previousColumn)}" : " FIRST";
+            return new List<string> { $"ALTER TABLE {QuoteIdentifier(tableName)} ADD COLUMN {columnDef}{afterClause};" };
+        }
+
+        private List<string> GenerateAlterColumnMigrationSql(string tableName, PropertyInfo prop, SugarColumn? columnAttr, DbColumnInfo dbColumn)
+        {
+            // PostgreSQL 需要将列变更拆成 TYPE / NULLABLE / COMMENT 多条语句。
+            if (_currentEnv?.DbType == DataBaseType.PostgreSQL)
+            {
+                return GeneratePostgresAlterColumnMigrationSql(tableName, prop, columnAttr, dbColumn);
+            }
+
+            var columnDef = GenerateColumnDefinition(prop, columnAttr);
+            return new List<string> { $"ALTER TABLE {QuoteIdentifier(tableName)} MODIFY COLUMN {columnDef};" };
+        }
+
         private string GenerateColumnDefinition(PropertyInfo prop, SugarColumn? columnAttr)
         {
             var columnName = columnAttr?.ColumnName ?? prop.Name;
             var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
             var isNullable = columnAttr?.IsNullable ?? Nullable.GetUnderlyingType(prop.PropertyType) != null;
 
-            // 确定 MySQL 数据类型
-            string dataType;
-            if (!string.IsNullOrEmpty(columnAttr?.ColumnDataType))
-            {
-                dataType = columnAttr.ColumnDataType;
-            }
-            else
-            {
-                dataType = GetMySqlDataType(propType, columnAttr);
-            }
+            var dataType = ResolveColumnDataType(propType, columnAttr);
 
             // 构建列定义
             var sb = new System.Text.StringBuilder();
-            sb.Append($"`{columnName}` {dataType}");
+            sb.Append($"{QuoteIdentifier(columnName)} {dataType}");
+
+            // PostgreSQL 主键自增列优先输出原生 IDENTITY，而不是 legacy nextval 默认值。
+            if (_currentEnv?.DbType == DataBaseType.PostgreSQL && columnAttr?.IsPrimaryKey == true && columnAttr.IsIdentity)
+            {
+                sb.Append(" GENERATED BY DEFAULT AS IDENTITY");
+            }
 
             if (!isNullable)
             {
                 sb.Append(" NOT NULL");
             }
 
-            if (!string.IsNullOrEmpty(columnAttr?.DefaultValue))
+            var defaultClause = BuildDefaultClause(propType, isNullable, columnAttr);
+            if (!string.IsNullOrEmpty(defaultClause))
             {
-                var defaultValue = columnAttr.DefaultValue;
-                // 数字类型不需要引号
-                if (propType == typeof(int) || propType == typeof(long) || propType == typeof(decimal) ||
-                    propType == typeof(float) || propType == typeof(double) || propType == typeof(byte) ||
-                    propType == typeof(short))
-                {
-                    sb.Append($" DEFAULT {defaultValue}");
-                }
-                else
-                {
-                    sb.Append($" DEFAULT '{defaultValue}'");
-                }
-            }
-            else if (!isNullable)
-            {
-                // 非空字段需要默认值
-                if (propType == typeof(int) || propType == typeof(long) || propType == typeof(byte) || propType == typeof(short))
-                {
-                    sb.Append(" DEFAULT 0");
-                }
-                else if (propType == typeof(decimal) || propType == typeof(float) || propType == typeof(double))
-                {
-                    sb.Append(" DEFAULT 0");
-                }
-                else if (propType == typeof(string))
-                {
-                    sb.Append(" DEFAULT ''");
-                }
-                else if (propType == typeof(bool))
-                {
-                    sb.Append(" DEFAULT 0");
-                }
+                sb.Append($" DEFAULT {defaultClause}");
             }
 
             // 添加注释（优先使用 ColumnDescription，其次使用 Summary）
             var description = GetColumnDescription(prop, columnAttr);
-            if (!string.IsNullOrEmpty(description))
+            if (_currentEnv?.DbType != DataBaseType.PostgreSQL && !string.IsNullOrEmpty(description))
             {
                 sb.Append($" COMMENT '{description.Replace("'", "\\'")}'");
             }
 
             return sb.ToString();
+        }
+
+        private List<string> GeneratePostgresAddColumnMigrationSql(string tableName, PropertyInfo prop, SugarColumn? columnAttr)
+        {
+            var sqlList = new List<string>();
+            var columnDef = GenerateColumnDefinition(prop, columnAttr);
+            var columnName = columnAttr?.ColumnName ?? prop.Name;
+            var description = GetColumnDescription(prop, columnAttr);
+
+            // PostgreSQL 列注释走 COMMENT ON COLUMN，不能内联在 ADD COLUMN 语句中。
+            sqlList.Add($"ALTER TABLE {QuoteIdentifier(tableName)} ADD COLUMN {columnDef};");
+
+            if (!string.IsNullOrEmpty(description) && _dialect != null)
+            {
+                sqlList.Add($"{_dialect.BuildSetColumnCommentSql(tableName, columnName, description)};");
+            }
+
+            return sqlList;
+        }
+
+        private List<string> GeneratePostgresAlterColumnMigrationSql(string tableName, PropertyInfo prop, SugarColumn? columnAttr, DbColumnInfo dbColumn)
+        {
+            var sqlList = new List<string>();
+            var columnName = columnAttr?.ColumnName ?? prop.Name;
+            var quotedTable = QuoteIdentifier(tableName);
+            var quotedColumn = QuoteIdentifier(columnName);
+            var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            var entityNullable = columnAttr?.IsNullable ?? Nullable.GetUnderlyingType(prop.PropertyType) != null;
+            var targetDataType = ResolveColumnDataType(propType, columnAttr);
+            var hasTypeChange = HasColumnTypeChange(prop, columnAttr, dbColumn);
+            var hasCrossFamilyTypeChange = !IsEquivalentDatabaseType(propType, dbColumn);
+
+            // PostgreSQL 没有 MODIFY COLUMN，需要按变更维度分别输出。
+            if (hasTypeChange)
+            {
+                sqlList.Add(BuildPostgresAlterTypeSql(quotedTable, quotedColumn, targetDataType, hasCrossFamilyTypeChange));
+            }
+
+            if (entityNullable != dbColumn.IsNullable)
+            {
+                sqlList.Add(entityNullable
+                    ? $"ALTER TABLE {quotedTable} ALTER COLUMN {quotedColumn} DROP NOT NULL;"
+                    : $"ALTER TABLE {quotedTable} ALTER COLUMN {quotedColumn} SET NOT NULL;");
+            }
+
+            var description = GetColumnDescription(prop, columnAttr).Trim();
+            var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
+            if (!string.IsNullOrEmpty(description) && !string.Equals(description, dbDescription, StringComparison.Ordinal) && _dialect != null)
+            {
+                sqlList.Add($"{_dialect.BuildSetColumnCommentSql(tableName, columnName, description, dbColumn.DataType)};");
+            }
+
+            return sqlList;
+        }
+
+        private bool HasColumnTypeChange(PropertyInfo prop, SugarColumn? columnAttr, DbColumnInfo dbColumn)
+        {
+            var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (!string.IsNullOrEmpty(columnAttr?.ColumnDataType))
+            {
+                return !string.Equals(columnAttr.ColumnDataType, dbColumn.DataType, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (propType == typeof(string))
+            {
+                var entityLength = columnAttr?.Length ?? 0;
+                if (entityLength > 0)
+                {
+                    return dbColumn.Length != entityLength;
+                }
+
+                return !dbColumn.DataType.Equals("text", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (propType == typeof(decimal) && columnAttr != null && columnAttr.DecimalDigits > 0)
+            {
+                return dbColumn.Scale != columnAttr.DecimalDigits;
+            }
+
+            return false;
+        }
+
+        private string ResolveColumnDataType(Type propType, SugarColumn? columnAttr)
+        {
+            if (!string.IsNullOrEmpty(columnAttr?.ColumnDataType))
+            {
+                return columnAttr.ColumnDataType;
+            }
+
+            return _currentEnv?.DbType == DataBaseType.PostgreSQL
+                ? GetPostgreSqlDataType(propType, columnAttr)
+                : GetMySqlDataType(propType, columnAttr);
+        }
+
+        private string BuildDefaultClause(Type propType, bool isNullable, SugarColumn? columnAttr)
+        {
+            // identity 列默认值由数据库维护，迁移 SQL 不再显式拼 DEFAULT。
+            if (columnAttr?.IsPrimaryKey == true && columnAttr.IsIdentity && _currentEnv?.DbType == DataBaseType.PostgreSQL)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrEmpty(columnAttr?.DefaultValue))
+            {
+                return FormatDefaultValue(propType, columnAttr.DefaultValue);
+            }
+
+            if (isNullable)
+            {
+                return string.Empty;
+            }
+
+            if (propType == typeof(int) || propType == typeof(long) || propType == typeof(byte) || propType == typeof(short))
+            {
+                return "0";
+            }
+
+            if (propType == typeof(decimal) || propType == typeof(float) || propType == typeof(double))
+            {
+                return "0";
+            }
+
+            if (propType == typeof(string))
+            {
+                return "''";
+            }
+
+            if (propType == typeof(bool))
+            {
+                return _currentEnv?.DbType == DataBaseType.PostgreSQL ? "false" : "0";
+            }
+
+            return string.Empty;
+        }
+
+        private string FormatDefaultValue(Type propType, string defaultValue)
+        {
+            if (propType == typeof(int) || propType == typeof(long) || propType == typeof(decimal) ||
+                propType == typeof(float) || propType == typeof(double) || propType == typeof(byte) ||
+                propType == typeof(short))
+            {
+                return defaultValue;
+            }
+
+            if (propType == typeof(bool))
+            {
+                if (_currentEnv?.DbType == DataBaseType.PostgreSQL)
+                {
+                    // PostgreSQL 布尔默认值统一输出 true/false，避免沿用 1/0 风格。
+                    return defaultValue == "1" ? "true" : defaultValue == "0" ? "false" : defaultValue.ToLowerInvariant();
+                }
+
+                return defaultValue;
+            }
+
+            return $"'{defaultValue.Replace("'", "''")}'";
         }
 
         private string GetMySqlDataType(Type propType, SugarColumn? columnAttr)
@@ -1202,6 +1377,48 @@ namespace Aisix.CodeFirst.Services
                 return "blob";
 
             return "varchar(255)";
+        }
+
+        private string GetPostgreSqlDataType(Type propType, SugarColumn? columnAttr)
+        {
+            var length = columnAttr?.Length ?? 0;
+            var decimalDigits = columnAttr?.DecimalDigits ?? 2;
+
+            if (propType == typeof(int))
+                return "integer";
+            if (propType == typeof(long))
+                return "bigint";
+            if (propType == typeof(short))
+                return "smallint";
+            if (propType == typeof(byte))
+                return "smallint";
+            if (propType == typeof(bool))
+                return "boolean";
+            if (propType == typeof(decimal))
+                return $"numeric({(length > 0 ? length : 18)},{decimalDigits})";
+            if (propType == typeof(float))
+                return "real";
+            if (propType == typeof(double))
+                return "double precision";
+            if (propType == typeof(DateTime))
+                return "timestamp";
+            if (propType == typeof(string))
+            {
+                if (length > 0 && length <= 10485760)
+                    return $"varchar({length})";
+                return "text";
+            }
+            if (propType == typeof(Guid))
+                return "uuid";
+            if (propType == typeof(byte[]))
+                return "bytea";
+
+            return "varchar(255)";
+        }
+
+        private string QuoteIdentifier(string identifier)
+        {
+            return _dialect?.QuoteIdentifier(identifier) ?? $"`{identifier}`";
         }
 
         private void SaveMigrationSql(List<string> sqlLines)
@@ -1591,43 +1808,108 @@ namespace Aisix.CodeFirst.Services
             return withoutDate;
         }
 
+        private sealed class IndexDefinition
+        {
+            public string Name { get; init; } = string.Empty;
+
+            public List<string> Fields { get; init; } = new();
+
+            public bool IsUnique { get; init; }
+        }
+
+        private sealed class PostgresIdentityColumnInfo
+        {
+            public string? IsIdentity { get; init; }
+
+            public string? IdentityGeneration { get; init; }
+
+            public string? ColumnDefault { get; init; }
+
+            public string? SequenceName { get; init; }
+        }
+
+        private List<IndexDefinition> GetEntityIndexes(Type entityType)
+        {
+            var definitions = new List<IndexDefinition>();
+            var attrs = entityType.GetCustomAttributesData();
+
+            foreach (var attr in attrs)
+            {
+                if (attr.AttributeType.Name != "SugarIndexAttribute" || attr.ConstructorArguments.Count == 0)
+                {
+                    continue;
+                }
+
+                var indexName = attr.ConstructorArguments[0].Value?.ToString() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(indexName))
+                {
+                    continue;
+                }
+
+                var fields = new List<string>();
+                bool isUnique = false;
+
+                for (int i = 1; i < attr.ConstructorArguments.Count; i++)
+                {
+                    var argument = attr.ConstructorArguments[i];
+                    if (argument.ArgumentType == typeof(string) && argument.Value is string fieldName && !string.IsNullOrWhiteSpace(fieldName))
+                    {
+                        fields.Add(fieldName);
+                        continue;
+                    }
+
+                    if (argument.ArgumentType == typeof(bool) && argument.Value is bool ctorUnique)
+                    {
+                        isUnique = ctorUnique;
+                    }
+                }
+
+                foreach (var namedArg in attr.NamedArguments)
+                {
+                    if (namedArg.MemberName.Equals("isUnique", StringComparison.OrdinalIgnoreCase) &&
+                        namedArg.TypedValue.ArgumentType == typeof(bool) &&
+                        namedArg.TypedValue.Value is bool namedUnique)
+                    {
+                        isUnique = namedUnique;
+                    }
+                }
+
+                if (fields.Count == 0)
+                {
+                    continue;
+                }
+
+                definitions.Add(new IndexDefinition
+                {
+                    Name = indexName,
+                    Fields = fields,
+                    IsUnique = isUnique
+                });
+            }
+
+            return definitions;
+        }
+
         private void CreateIndex(string tableName, Type entityType, string indexName)
         {
             try
             {
-                // 从实体特性中获取索引定义的字段
-                var attrs = entityType.GetCustomAttributesData();
-                foreach (var attr in attrs)
+                if (_db == null || _dialect == null)
                 {
-                    if (attr.AttributeType.Name == "SugarIndexAttribute")
-                    {
-                        // 获取构造函数参数：IndexName, 字段名1, 字段名2, ...
-                        if (attr.ConstructorArguments.Count > 1)
-                        {
-                            var name = attr.ConstructorArguments[0].Value?.ToString() ?? "";
-                            if (name == indexName)
-                            {
-                                // 获取字段名（从第1个参数开始）
-                                var fieldNames = new List<string>();
-                                for (int i = 1; i < attr.ConstructorArguments.Count; i++)
-                                {
-                                    var fieldValue = attr.ConstructorArguments[i].Value;
-                                    if (fieldValue != null)
-                                    {
-                                        fieldNames.Add(fieldValue.ToString()!);
-                                    }
-                                }
+                    return;
+                }
 
-                                if (fieldNames.Count > 0)
-                                {
-                                    var sql = $"ALTER TABLE `{tableName}` ADD INDEX `{indexName}` (`{string.Join("`, `", fieldNames)}`)";
-                                    _db!.Ado.ExecuteCommand(sql);
-                                    Console.WriteLine($"    创建索引: {indexName} on ({string.Join(", ", fieldNames)})");
-                                }
-                                break;
-                            }
-                        }
+                foreach (var definition in GetEntityIndexes(entityType))
+                {
+                    if (!string.Equals(definition.Name, indexName, StringComparison.Ordinal))
+                    {
+                        continue;
                     }
+
+                    var sql = _dialect.BuildCreateIndexSql(tableName, definition.Name, definition.Fields, definition.IsUnique);
+                    _db.Ado.ExecuteCommand(sql);
+                    Console.WriteLine($"    创建索引: {definition.Name} on ({string.Join(", ", definition.Fields)})");
+                    break;
                 }
             }
             catch (Exception ex)
@@ -1640,53 +1922,27 @@ namespace Aisix.CodeFirst.Services
         {
             try
             {
+                if (_db == null || _dialect == null)
+                {
+                    return;
+                }
+
                 // 获取数据库中已有的索引
-                var dbIndexes = _db!.DbMaintenance.GetIndexList(tableName)
+                var dbIndexes = _db.DbMaintenance.GetIndexList(tableName)
                     .Select(i => i.ToLower())
                     .ToHashSet();
 
-                // 从实体特性中获取所有索引定义
-                var attrs = entityType.GetCustomAttributesData();
-                foreach (var attr in attrs)
+                foreach (var definition in GetEntityIndexes(entityType))
                 {
-                    if (attr.AttributeType.Name == "SugarIndexAttribute")
+                    if (dbIndexes.Contains(definition.Name.ToLower()))
                     {
-                        // 获取构造函数参数：IndexName, 字段名1, 字段名2, ..., OrderByType
-                        if (attr.ConstructorArguments.Count >= 2)
-                        {
-                            // 第0个是索引名
-                            var indexName = attr.ConstructorArguments[0].Value?.ToString() ?? "";
-                            if (string.IsNullOrEmpty(indexName)) continue;
-
-                            // 检查索引是否已存在
-                            if (dbIndexes.Contains(indexName.ToLower()))
-                            {
-                                Console.WriteLine($"    索引已存在: {indexName}");
-                                continue;
-                            }
-
-                            // 获取字段名（从第1个参数开始，跳过最后两个：OrderByType 和 isUnique）
-                            var fieldNames = new List<string>();
-                            // 字段名是参数1开始，到倒数第3个为止（倒数第2个是OrderByType，倒数第1个是isUnique）
-                            var lastFieldIndex = attr.ConstructorArguments.Count - 3;
-                            for (int i = 1; i <= lastFieldIndex; i++)
-                            {
-                                var arg = attr.ConstructorArguments[i];
-                                var fieldValue = arg.Value;
-                                if (fieldValue != null)
-                                {
-                                    fieldNames.Add(fieldValue.ToString()!);
-                                }
-                            }
-
-                            if (fieldNames.Count > 0)
-                            {
-                                var sql = $"ALTER TABLE `{tableName}` ADD INDEX `{indexName}` (`{string.Join("`, `", fieldNames)}`)";
-                                _db.Ado.ExecuteCommand(sql);
-                                Console.WriteLine($"    创建索引: {indexName} on ({string.Join(", ", fieldNames)})");
-                            }
-                        }
+                        Console.WriteLine($"    索引已存在: {definition.Name}");
+                        continue;
                     }
+
+                    var sql = _dialect.BuildCreateIndexSql(tableName, definition.Name, definition.Fields, definition.IsUnique);
+                    _db.Ado.ExecuteCommand(sql);
+                    Console.WriteLine($"    创建索引: {definition.Name} on ({string.Join(", ", definition.Fields)})");
                 }
             }
             catch (Exception ex)
@@ -1696,14 +1952,205 @@ namespace Aisix.CodeFirst.Services
         }
 
         /// <summary>
+        /// PostgreSQL 下对齐主键自增列：
+        /// 1. 优先将 legacy sequence/default 方案收敛为原生 identity 列
+        /// 2. 修复 sequence 当前值，避免插入时主键冲突
+        /// </summary>
+        private void RepairPostgresIdentityDefaults(string tableName, Type entityType)
+        {
+            try
+            {
+                if (_db == null || _currentEnv == null || _dialect == null)
+                {
+                    return;
+                }
+
+                if (_currentEnv.DbType != DataBaseType.PostgreSQL || !_currentEnv.RepairPostgresIdentity)
+                {
+                    return;
+                }
+
+                var properties = entityType.GetProperties()
+                    .Where(p => p.GetCustomAttribute<SugarColumn>()?.IsIgnore != true)
+                    .ToList();
+
+                int repaired = 0;
+                foreach (var prop in properties)
+                {
+                    var columnAttr = prop.GetCustomAttribute<SugarColumn>();
+                    if (columnAttr?.IsPrimaryKey != true || columnAttr.IsIdentity != true)
+                    {
+                        continue;
+                    }
+
+                    var columnName = columnAttr.ColumnName ?? prop.Name;
+                    var quotedTableName = _dialect.QuoteIdentifier(tableName);
+                    var quotedColumnName = _dialect.QuoteIdentifier(columnName);
+                    var identityInfo = GetPostgresIdentityColumnInfo(tableName, columnName);
+                    if (identityInfo == null)
+                    {
+                        continue;
+                    }
+
+                    // 老表如果还是 sequence + default 方案，这里主动收敛为原生 identity。
+                    if (!string.Equals(identityInfo.IsIdentity, "YES", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ConvertPostgresColumnToIdentity(tableName, columnName, quotedTableName, quotedColumnName, identityInfo);
+                        identityInfo = GetPostgresIdentityColumnInfo(tableName, columnName);
+                    }
+                    else if (string.Equals(identityInfo.IdentityGeneration, "ALWAYS", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _db.Ado.ExecuteCommand(
+                            $"ALTER TABLE {quotedTableName} ALTER COLUMN {quotedColumnName} SET GENERATED BY DEFAULT");
+                        identityInfo = GetPostgresIdentityColumnInfo(tableName, columnName);
+                    }
+
+                    if (identityInfo != null && !string.IsNullOrWhiteSpace(identityInfo.SequenceName))
+                    {
+                        AlignPostgresSequenceValue(quotedTableName, quotedColumnName, identityInfo.SequenceName);
+                    }
+
+                    repaired++;
+                }
+
+                if (repaired > 0)
+                {
+                    Console.WriteLine($"    对齐 PostgreSQL 自增列: {repaired} 个");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    对齐 PostgreSQL 自增列失败: {ex.Message}");
+            }
+        }
+
+        private PostgresIdentityColumnInfo? GetPostgresIdentityColumnInfo(string tableName, string columnName)
+        {
+            if (_db == null)
+            {
+                return null;
+            }
+
+            const string sql = @"
+SELECT
+    c.is_identity AS IsIdentity,
+    c.identity_generation AS IdentityGeneration,
+    c.column_default AS ColumnDefault,
+    pg_get_serial_sequence(format('%I.%I', current_schema(), @tableName), @columnName) AS SequenceName
+FROM information_schema.columns c
+WHERE c.table_schema = current_schema()
+  AND c.table_name = @tableName
+  AND c.column_name = @columnName
+LIMIT 1;";
+
+            return _db.Ado.SqlQuerySingle<PostgresIdentityColumnInfo>(sql, new { tableName, columnName });
+        }
+
+        private void ConvertPostgresColumnToIdentity(
+            string tableName,
+            string columnName,
+            string quotedTableName,
+            string quotedColumnName,
+            PostgresIdentityColumnInfo identityInfo)
+        {
+            if (_db == null || _dialect == null)
+            {
+                return;
+            }
+
+            string? legacySequenceName = identityInfo.SequenceName;
+            string? legacySequenceToDrop = null;
+
+            // 先移除旧默认值，否则 PostgreSQL 不允许直接追加 identity 属性。
+            _db.Ado.ExecuteCommand($"ALTER TABLE {quotedTableName} ALTER COLUMN {quotedColumnName} DROP DEFAULT");
+
+            if (!string.IsNullOrWhiteSpace(legacySequenceName))
+            {
+                var legacySequenceParts = SplitQualifiedIdentifier(legacySequenceName);
+                var legacySequenceBaseName = legacySequenceParts[^1];
+                var legacySequenceRenamed = $"{legacySequenceBaseName}_legacy_cf_{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+
+                // 先临时改名，避免 PostgreSQL 生成的新 identity sequence 与旧 sequence 重名冲突。
+                _db.Ado.ExecuteCommand(
+                    $"ALTER SEQUENCE {QuoteQualifiedIdentifier(legacySequenceName)} RENAME TO {_dialect.QuoteIdentifier(legacySequenceRenamed)}");
+
+                legacySequenceToDrop = legacySequenceParts.Length > 1
+                    ? string.Join(".", legacySequenceParts.Take(legacySequenceParts.Length - 1).Append(legacySequenceRenamed))
+                    : legacySequenceRenamed;
+            }
+
+            _db.Ado.ExecuteCommand(
+                $"ALTER TABLE {quotedTableName} ALTER COLUMN {quotedColumnName} ADD GENERATED BY DEFAULT AS IDENTITY");
+
+            var newIdentityInfo = GetPostgresIdentityColumnInfo(tableName, columnName);
+            if (newIdentityInfo == null || string.IsNullOrWhiteSpace(newIdentityInfo.SequenceName))
+            {
+                throw new InvalidOperationException($"列 {tableName}.{columnName} 转换为 identity 后未找到关联 sequence。");
+            }
+
+            AlignPostgresSequenceValue(quotedTableName, quotedColumnName, newIdentityInfo.SequenceName);
+
+            if (!string.IsNullOrWhiteSpace(legacySequenceToDrop) &&
+                !string.Equals(NormalizeQualifiedIdentifier(legacySequenceToDrop), NormalizeQualifiedIdentifier(newIdentityInfo.SequenceName), StringComparison.OrdinalIgnoreCase))
+            {
+                _db.Ado.ExecuteCommand($"DROP SEQUENCE IF EXISTS {QuoteQualifiedIdentifier(legacySequenceToDrop)}");
+            }
+        }
+
+        private void AlignPostgresSequenceValue(string quotedTableName, string quotedColumnName, string sequenceName)
+        {
+            if (_db == null)
+            {
+                return;
+            }
+
+            // 将 sequence 调整到当前最大主键之后，避免迁移后插入出现 duplicate key。
+            var nextValue = _db.Ado.SqlQuerySingle<long>(
+                $"SELECT COALESCE(MAX({quotedColumnName}), 0) + 1 FROM {quotedTableName}");
+
+            _db.Ado.SqlQuerySingle<long>(
+                "SELECT setval(@sequenceName, @nextValue, false);",
+                new
+                {
+                    sequenceName,
+                    nextValue
+                });
+        }
+
+        private string QuoteQualifiedIdentifier(string identifier)
+        {
+            var parts = SplitQualifiedIdentifier(identifier);
+            return string.Join(".", parts.Select(p => _dialect!.QuoteIdentifier(p)));
+        }
+
+        private static string[] SplitQualifiedIdentifier(string identifier)
+        {
+            return identifier
+                .Split('.', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim().Trim('"'))
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToArray();
+        }
+
+        private static string NormalizeQualifiedIdentifier(string identifier)
+        {
+            return string.Join(".", SplitQualifiedIdentifier(identifier)).ToLowerInvariant();
+        }
+
+        /// <summary>
         /// 同步字段注释到数据库（从 ColumnDescription 或 Summary）
         /// </summary>
         private void SyncColumnComments(string tableName, Type entityType)
         {
             try
             {
+                if (_db == null || _dialect == null)
+                {
+                    return;
+                }
+
                 // 获取数据库中的列信息
-                var dbColumns = _db!.DbMaintenance.GetColumnInfosByTableName(tableName, false);
+                var dbColumns = _db.DbMaintenance.GetColumnInfosByTableName(tableName, false);
                 var dbColumnDict = dbColumns.ToDictionary(c => c.DbColumnName.ToLower(), c => c);
 
                 // 获取实体中的属性
@@ -1736,10 +2183,8 @@ namespace Aisix.CodeFirst.Services
                     // 只有描述发生变化时才更新
                     if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal))
                     {
-                        // 使用 SQL 语句修改字段注释
-                        var escapedDesc = entityDescription.Replace("'", "''");
-                        var sql = $"ALTER TABLE `{tableName}` MODIFY COLUMN `{columnName}` {dbColumn.DataType} COMMENT '{escapedDesc}'";
-                        _db!.Ado.ExecuteCommand(sql);
+                        var sql = _dialect.BuildSetColumnCommentSql(tableName, columnName, entityDescription, dbColumn.DataType);
+                        _db.Ado.ExecuteCommand(sql);
                         updated++;
                     }
                 }
@@ -1763,6 +2208,13 @@ namespace Aisix.CodeFirst.Services
             var diffs = new List<string>();
             var columnName = columnAttr?.ColumnName ?? prop.Name;
             var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
+            // 没有显式 ColumnDataType 时，也要根据实体属性推导出的目标类型来比较，避免漏报 string -> decimal 这类变更。
+            var targetDataType = ResolveColumnDataType(propType, columnAttr);
+            if (!IsEquivalentDatabaseType(propType, dbColumn))
+            {
+                diffs.Add($"~ 字段类型变更 [{columnName}]: {dbColumn.DataType} → {targetDataType}");
+            }
 
             // 检查字段长度变更
             var entityLength = columnAttr?.Length ?? 0;
@@ -1821,6 +2273,180 @@ namespace Aisix.CodeFirst.Services
         {
             if (string.IsNullOrEmpty(value)) return "";
             return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "...";
+        }
+
+        private List<string> GetBlockingPostgresTypeChanges(Type entityType, string tableName)
+        {
+            var blockingChanges = new List<string>();
+
+            if (_db == null || _currentEnv?.DbType != DataBaseType.PostgreSQL)
+            {
+                return blockingChanges;
+            }
+
+            if (IsTableEmpty(tableName))
+            {
+                return blockingChanges;
+            }
+
+            var dbColumns = _db.DbMaintenance.GetColumnInfosByTableName(tableName, false)
+                .ToDictionary(c => c.DbColumnName.ToLower(), c => c);
+
+            var properties = entityType.GetProperties()
+                .Where(p => p.GetCustomAttribute<SugarColumn>()?.IsIgnore != true)
+                .ToList();
+
+            foreach (var prop in properties)
+            {
+                var columnAttr = prop.GetCustomAttribute<SugarColumn>();
+                var columnName = columnAttr?.ColumnName ?? prop.Name;
+                if (!dbColumns.TryGetValue(columnName.ToLower(), out var dbColumn))
+                {
+                    continue;
+                }
+
+                var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                if (IsEquivalentDatabaseType(propType, dbColumn))
+                {
+                    continue;
+                }
+
+                var dbFamily = GetDatabaseTypeFamily(dbColumn.DataType);
+                var entityFamily = GetPropertyTypeFamily(propType);
+                if (dbFamily != entityFamily)
+                {
+                    var targetType = ResolveColumnDataType(propType, columnAttr);
+                    blockingChanges.Add($"字段 [{columnName}] 类型需从 {dbColumn.DataType} 转为 {targetType}，PostgreSQL 可能需要 USING 显式转换");
+                }
+            }
+
+            return blockingChanges;
+        }
+
+        private bool TryApplyPostgresEmptyTableMigration(Type entityType, string tableName)
+        {
+            if (_db == null || _currentEnv?.DbType != DataBaseType.PostgreSQL || !IsTableEmpty(tableName))
+            {
+                return false;
+            }
+
+            var sqlLines = GenerateEntityMigrationSql(entityType, false);
+            if (sqlLines.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var sql in sqlLines)
+            {
+                var trimmedSql = sql.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedSql))
+                {
+                    continue;
+                }
+
+                if (trimmedSql.StartsWith("-- [危险] ALTER TABLE", StringComparison.OrdinalIgnoreCase) && _currentEnv.AllowDeleteColumn)
+                {
+                    // 空表删除列没有数据风险，这里允许把危险提示转成真实执行语句。
+                    var executableSql = trimmedSql.Replace("-- [危险] ", "", StringComparison.Ordinal);
+                    _db.Ado.ExecuteCommand(executableSql.TrimEnd(';'));
+                    continue;
+                }
+
+                if (trimmedSql.StartsWith("--", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _db.Ado.ExecuteCommand(trimmedSql.TrimEnd(';'));
+            }
+
+            return true;
+        }
+
+        private bool IsTableEmpty(string tableName)
+        {
+            if (_db == null)
+            {
+                return false;
+            }
+
+            var sql = $"SELECT 1 FROM {QuoteIdentifier(tableName)} LIMIT 1;";
+            var hasRows = _db.Ado.SqlQuery<int>(sql);
+            return hasRows == null || hasRows.Count == 0;
+        }
+
+        private string BuildPostgresAlterTypeSql(string quotedTable, string quotedColumn, string targetDataType, bool hasCrossFamilyTypeChange)
+        {
+            if (hasCrossFamilyTypeChange)
+            {
+                // 跨类型家族时显式指定 USING，避免 PostgreSQL 因缺少自动 cast 而报 42804。
+                return $"ALTER TABLE {quotedTable} ALTER COLUMN {quotedColumn} TYPE {targetDataType} USING {quotedColumn}::{targetDataType};";
+            }
+
+            return $"ALTER TABLE {quotedTable} ALTER COLUMN {quotedColumn} TYPE {targetDataType};";
+        }
+
+        private bool IsEquivalentDatabaseType(Type propType, DbColumnInfo dbColumn)
+        {
+            return GetPropertyTypeFamily(propType) == GetDatabaseTypeFamily(dbColumn.DataType);
+        }
+
+        private string GetPropertyTypeFamily(Type propType)
+        {
+            if (propType == typeof(int))
+                return "int";
+            if (propType == typeof(long))
+                return "bigint";
+            if (propType == typeof(short) || propType == typeof(byte))
+                return "smallint";
+            if (propType == typeof(decimal))
+                return "decimal";
+            if (propType == typeof(float))
+                return "float";
+            if (propType == typeof(double))
+                return "double";
+            if (propType == typeof(bool))
+                return "bool";
+            if (propType == typeof(DateTime))
+                return "datetime";
+            if (propType == typeof(string))
+                return "string";
+            if (propType == typeof(Guid))
+                return "guid";
+            if (propType == typeof(byte[]))
+                return "bytes";
+
+            return "other";
+        }
+
+        private string GetDatabaseTypeFamily(string? dbType)
+        {
+            var type = (dbType ?? string.Empty).ToLowerInvariant();
+
+            if (type.Contains("bigint") || type.Contains("int8") || type.Contains("bigserial"))
+                return "bigint";
+            if (type.Contains("smallint") || type.Contains("int2") || type.Contains("smallserial") || type.Contains("tinyint"))
+                return "smallint";
+            if (type.Contains("int") || type.Contains("integer") || type.Contains("serial"))
+                return "int";
+            if (type.Contains("decimal") || type.Contains("numeric") || type.Contains("money"))
+                return "decimal";
+            if (type.Contains("double"))
+                return "double";
+            if (type.Contains("float") || type.Contains("real"))
+                return "float";
+            if (type.Contains("bool") || type.Contains("bit"))
+                return "bool";
+            if (type.Contains("timestamp") || type.Contains("datetime") || type == "date" || type == "time")
+                return "datetime";
+            if (type.Contains("char") || type.Contains("text") || type.Contains("json"))
+                return "string";
+            if (type.Contains("uuid") || type.Contains("guid") || type.Contains("uniqueidentifier"))
+                return "guid";
+            if (type.Contains("bytea") || type.Contains("blob") || type.Contains("binary"))
+                return "bytes";
+
+            return "other";
         }
 
         private List<string> GetTableDifferencesForSplit(Type entityType, string sampleTableName)

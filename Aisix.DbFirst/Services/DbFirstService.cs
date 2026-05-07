@@ -1,6 +1,7 @@
 using SqlSugar;
 using System.Text;
 using System.Text.RegularExpressions;
+using Aisix.Common.Db;
 
 namespace Aisix.DbFirst.Services
 {
@@ -358,6 +359,9 @@ namespace Aisix.DbFirst.Services
         private void GenerateProperty(StringBuilder sb, DbColumnInfo column, string tableName)
         {
             var columnDescription = column.ColumnDescription ?? "";
+            var normalizedDefaultValue = NormalizeDefaultValue(column);
+            // PostgreSQL 的 identity 列在部分场景下不会被 SqlSugar 正确标记，这里补一层兜底识别。
+            var isIdentity = IsIdentityColumn(tableName, column);
 
             sb.AppendLine("        /// <summary>");
             sb.AppendLine($"        /// {columnDescription}");
@@ -366,17 +370,13 @@ namespace Aisix.DbFirst.Services
             var attrs = new List<string>();
 
             if (column.IsPrimarykey) attrs.Add("IsPrimaryKey = true");
-            if (column.IsIdentity) attrs.Add("IsIdentity = true");
+            if (isIdentity) attrs.Add("IsIdentity = true");
             if (column.Length > 0 && IsStringType(column.DataType)) attrs.Add($"Length = {column.Length}");
             attrs.Add($"IsNullable = {column.IsNullable.ToString().ToLower()}");
 
-            if (!string.IsNullOrEmpty(column.DefaultValue))
+            if (!string.IsNullOrEmpty(normalizedDefaultValue))
             {
-                var defaultValue = column.DefaultValue
-                    .Replace("CURRENT_TIMESTAMP", "")
-                    .Replace("(", "").Replace(")", "").Replace("'", "").Trim();
-                if (!string.IsNullOrEmpty(defaultValue))
-                    attrs.Add($"DefaultValue = \"{defaultValue}\"");
+                attrs.Add($"DefaultValue = \"{normalizedDefaultValue}\"");
             }
 
             if (NeedsDataTypeAttribute(column.DataType))
@@ -389,7 +389,7 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine($"        [SugarColumn({string.Join(", ", attrs)})]");
 
             var propertyType = GetCSharpType(column.DataType, column.IsNullable);
-            var initValue = GetPropertyInitializer(column);
+            var initValue = GetPropertyInitializer(column, normalizedDefaultValue);
 
             if (!string.IsNullOrEmpty(initValue))
                 sb.AppendLine($"        public {propertyType} {column.DbColumnName} {{ get; set; }} = {initValue};");
@@ -553,6 +553,24 @@ namespace Aisix.DbFirst.Services
         {
             try
             {
+                if (_config.DbType == DataBaseType.PostgreSQL)
+                {
+                    // PostgreSQL 没有 MySQL 的 information_schema.STATISTICS，索引列需从 pg_catalog 读取。
+                    var pgSql = @"
+SELECT a.attname
+FROM pg_class t
+JOIN pg_namespace ns ON ns.oid = t.relnamespace
+JOIN pg_index ix ON ix.indrelid = t.oid
+JOIN pg_class i ON i.oid = ix.indexrelid
+JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS cols(attnum, ord) ON true
+JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = cols.attnum
+WHERE ns.nspname = current_schema()
+  AND t.relname = @tableName
+  AND i.relname = @indexName
+ORDER BY cols.ord";
+                    return _db.Ado.SqlQuery<string>(pgSql, new { tableName, indexName }) ?? new List<string>();
+                }
+
                 var sql = @"SELECT COLUMN_NAME FROM information_schema.STATISTICS
                            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @tableName AND INDEX_NAME = @indexName
                            ORDER BY SEQ_IN_INDEX";
@@ -565,6 +583,23 @@ namespace Aisix.DbFirst.Services
         {
             try
             {
+                if (_config.DbType == DataBaseType.PostgreSQL)
+                {
+                    // PostgreSQL 唯一索引标记位在 pg_index.indisunique。
+                    var pgSql = @"
+SELECT CASE WHEN ix.indisunique THEN 1 ELSE 0 END
+FROM pg_class t
+JOIN pg_namespace ns ON ns.oid = t.relnamespace
+JOIN pg_index ix ON ix.indrelid = t.oid
+JOIN pg_class i ON i.oid = ix.indexrelid
+WHERE ns.nspname = current_schema()
+  AND t.relname = @tableName
+  AND i.relname = @indexName
+LIMIT 1";
+                    var pgResult = _db.Ado.SqlQuery<int>(pgSql, new { tableName, indexName });
+                    return pgResult != null && pgResult.Count > 0 && pgResult[0] == 1;
+                }
+
                 var sql = @"SELECT NON_UNIQUE FROM information_schema.STATISTICS
                            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @tableName AND INDEX_NAME = @indexName LIMIT 1";
                 var result = _db.Ado.SqlQuery<int>(sql, new { tableName, indexName });
@@ -585,15 +620,40 @@ namespace Aisix.DbFirst.Services
             return specialTypes.Any(t => dataType.ToLower().Contains(t));
         }
 
+        private bool IsIdentityColumn(string tableName, DbColumnInfo column)
+        {
+            if (column.IsIdentity)
+            {
+                return true;
+            }
+
+            if (_config.DbType != DataBaseType.PostgreSQL)
+            {
+                return false;
+            }
+
+            // 对 PostgreSQL 额外读取 information_schema.columns.is_identity，避免回生成丢失 IsIdentity。
+            const string sql = @"
+SELECT is_identity
+FROM information_schema.columns
+WHERE table_schema = current_schema()
+  AND table_name = @tableName
+  AND column_name = @columnName
+LIMIT 1;";
+
+            var result = _db.Ado.SqlQuerySingle<string>(sql, new { tableName, columnName = column.DbColumnName });
+            return string.Equals(result, "YES", StringComparison.OrdinalIgnoreCase);
+        }
+
         private string GetCSharpType(string dbType, bool isNullable)
         {
             var type = dbType.ToLower();
             string csharpType;
 
-            if (type.Contains("bigint")) csharpType = "long";
+            if (type.Contains("bigint") || type == "int8" || type.Contains("bigserial")) csharpType = "long";
             else if (type.Contains("tinyint")) csharpType = "byte";
-            else if (type.Contains("smallint")) csharpType = "short";
-            else if (type.Contains("int")) csharpType = "int";
+            else if (type.Contains("smallint") || type == "int2" || type.Contains("smallserial")) csharpType = "short";
+            else if (type.Contains("integer") || type == "int4" || type.Contains("serial") || type.Contains("int")) csharpType = "int";
             else if (type.Contains("decimal") || type.Contains("numeric") || type.Contains("money")) csharpType = "decimal";
             else if (type.Contains("float") || type.Contains("real")) csharpType = "float";
             else if (type.Contains("double")) csharpType = "double";
@@ -601,40 +661,81 @@ namespace Aisix.DbFirst.Services
             else if (type.Contains("date") || type.Contains("time")) csharpType = "DateTime";
             else if (type.Contains("char") || type.Contains("text")) csharpType = "string";
             else if (type.Contains("binary") || type.Contains("blob")) csharpType = "byte[]";
-            else if (type.Contains("uniqueidentifier") || type.Contains("guid")) csharpType = "Guid";
+            else if (type.Contains("uniqueidentifier") || type.Contains("guid") || type.Contains("uuid")) csharpType = "Guid";
             else csharpType = "string";
 
-            if (isNullable && csharpType != "string" && csharpType != "byte[]")
+            if (isNullable && csharpType == "string")
+                csharpType = "string?";
+            else if (isNullable && csharpType != "byte[]")
                 csharpType += "?";
 
             return csharpType;
         }
 
-        private string GetPropertyInitializer(DbColumnInfo column)
+        private string? NormalizeDefaultValue(DbColumnInfo column)
+        {
+            if (string.IsNullOrWhiteSpace(column.DefaultValue))
+                return null;
+
+            var defaultValue = column.DefaultValue.Trim();
+            // identity 列的 nextval 默认值不应该回写到生成实体中，否则会产出非法 C# 初始化代码。
+            if (column.IsIdentity && defaultValue.Contains("nextval", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (_config.DbType == DataBaseType.PostgreSQL)
+            {
+                // PostgreSQL 默认值常带类型转换后缀，例如 0::numeric、true::boolean，这里统一剥离。
+                defaultValue = Regex.Replace(defaultValue, @"::[A-Za-z0-9_\s\[\]\.\""']+", "", RegexOptions.IgnoreCase).Trim();
+            }
+
+            defaultValue = defaultValue.Trim();
+            while (defaultValue.StartsWith("(") && defaultValue.EndsWith(")") && defaultValue.Length > 2)
+            {
+                defaultValue = defaultValue[1..^1].Trim();
+            }
+
+            if (string.Equals(defaultValue, "NULL", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (string.Equals(defaultValue, "now()", StringComparison.OrdinalIgnoreCase))
+                return "CURRENT_TIMESTAMP";
+
+            if (defaultValue.StartsWith("'") && defaultValue.EndsWith("'") && defaultValue.Length >= 2)
+            {
+                defaultValue = defaultValue[1..^1];
+            }
+
+            return string.IsNullOrWhiteSpace(defaultValue) ? null : defaultValue;
+        }
+
+        private string GetPropertyInitializer(DbColumnInfo column, string? normalizedDefaultValue)
         {
             if (IsStringType(column.DataType) && !column.IsNullable)
                 return "string.Empty";
 
-            if (!string.IsNullOrEmpty(column.DefaultValue))
+            if (!string.IsNullOrEmpty(normalizedDefaultValue))
             {
-                var defaultValue = column.DefaultValue.Replace("(", "").Replace(")", "").Replace("'", "").Trim();
+                var defaultValue = normalizedDefaultValue.Trim();
                 var type = column.DataType.ToLower();
 
-                if (defaultValue.ToUpper() == "CURRENT_TIMESTAMP" && type.Contains("date"))
+                if (defaultValue.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase) && type.Contains("date"))
                     return "DateTime.Now";
 
-                if ((type.Contains("int") || type.Contains("decimal") || type.Contains("float") || type.Contains("double"))
-                    && !string.IsNullOrEmpty(defaultValue) && defaultValue != "NULL")
+                if ((type.Contains("bigint") || type.Contains("smallint") || type.Contains("integer") || type == "int8" || type == "int4" || type == "int2" || type.Contains("int")
+                    || type.Contains("decimal") || type.Contains("numeric") || type.Contains("float") || type.Contains("double"))
+                    && defaultValue != "NULL")
                 {
-                    if (type.Contains("decimal") && !defaultValue.EndsWith("M"))
+                    if ((type.Contains("decimal") || type.Contains("numeric")) && !defaultValue.EndsWith("M", StringComparison.OrdinalIgnoreCase))
                         return defaultValue + "M";
                     return defaultValue;
                 }
 
                 if (type.Contains("bit") || type.Contains("bool"))
-                    return defaultValue == "1" || defaultValue.ToUpper() == "TRUE" ? "true" : "false";
+                    return defaultValue == "1" || defaultValue.Equals("TRUE", StringComparison.OrdinalIgnoreCase) ? "true" : "false";
 
-                if (IsStringType(type) && !string.IsNullOrEmpty(defaultValue))
+                if (IsStringType(type))
                     return $"\"{defaultValue}\"";
             }
 

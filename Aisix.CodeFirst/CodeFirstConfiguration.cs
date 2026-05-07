@@ -33,6 +33,11 @@ namespace Aisix.CodeFirst
         public string ConfirmationPrefix { get; set; } = string.Empty;
 
         /// <summary>
+        /// 是否在 PostgreSQL 环境下自动修复 Identity/Sequence 默认值
+        /// </summary>
+        public bool RepairPostgresIdentity { get; set; } = false;
+
+        /// <summary>
         /// 环境描述
         /// </summary>
         public string Description { get; set; } = string.Empty;
