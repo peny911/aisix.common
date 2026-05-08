@@ -258,6 +258,7 @@ namespace Aisix.DbFirst.Services
                 var tableInfo = _db.DbMaintenance.GetTableInfoList().FirstOrDefault(t => t.Name == tableName);
                 var tableDescription = tableInfo?.Description ?? tableName;
                 var escapedTableDescription = tableDescription.Replace("\"", "\\\"");
+                var hasJsonColumn = columns.Any(IsJsonColumn);
 
                 var sb = new StringBuilder();
 
@@ -273,6 +274,10 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine();
                 sb.AppendLine("#nullable enable");
                 sb.AppendLine();
+                if (hasJsonColumn)
+                {
+                    sb.AppendLine("using Newtonsoft.Json.Linq;");
+                }
                 sb.AppendLine("using SqlSugar;");
                 sb.AppendLine("using System;");
                 sb.AppendLine();
@@ -374,6 +379,11 @@ namespace Aisix.DbFirst.Services
             if (isIdentity) attrs.Add("IsIdentity = true");
             if (column.Length > 0 && IsStringType(column.DataType)) attrs.Add($"Length = {column.Length}");
             attrs.Add($"IsNullable = {column.IsNullable.ToString().ToLower()}");
+
+            if (IsJsonColumn(column))
+            {
+                attrs.Add("IsJson = true");
+            }
 
             if (!string.IsNullOrEmpty(normalizedDefaultValue))
             {
@@ -625,6 +635,12 @@ LIMIT 1";
             return stringTypes.Any(t => dataType.ToLower().Contains(t));
         }
 
+        private bool IsJsonColumn(DbColumnInfo column)
+        {
+            var dataType = column.DataType?.ToLowerInvariant() ?? string.Empty;
+            return dataType.Contains("json");
+        }
+
         private bool NeedsDataTypeAttribute(string dataType)
         {
             var specialTypes = new[] { "text", "ntext", "longtext", "mediumtext", "json", "blob", "longblob" };
@@ -661,7 +677,8 @@ LIMIT 1;";
             var type = dbType.ToLower();
             string csharpType;
 
-            if (type.Contains("bigint") || type == "int8" || type.Contains("bigserial")) csharpType = "long";
+            if (type.Contains("json")) csharpType = "JObject";
+            else if (type.Contains("bigint") || type == "int8" || type.Contains("bigserial")) csharpType = "long";
             else if (type.Contains("tinyint")) csharpType = "byte";
             else if (type.Contains("smallint") || type == "int2" || type.Contains("smallserial")) csharpType = "short";
             else if (type.Contains("integer") || type == "int4" || type.Contains("serial") || type.Contains("int")) csharpType = "int";
@@ -677,6 +694,8 @@ LIMIT 1;";
 
             if (isNullable && csharpType == "string")
                 csharpType = "string?";
+            else if (isNullable && csharpType == "JObject")
+                csharpType = "JObject?";
             else if (isNullable && csharpType != "byte[]")
                 csharpType += "?";
 

@@ -1341,6 +1341,11 @@ namespace Aisix.CodeFirst.Services
                 return columnAttr.ColumnDataType;
             }
 
+            if (IsJsonNetType(propType) || columnAttr?.IsJson == true)
+            {
+                return _currentEnv?.DbType == DataBaseType.PostgreSQL ? "jsonb" : "json";
+            }
+
             return _currentEnv?.DbType == DataBaseType.PostgreSQL
                 ? GetPostgreSqlDataType(propType, columnAttr)
                 : GetMySqlDataType(propType, columnAttr);
@@ -1382,6 +1387,11 @@ namespace Aisix.CodeFirst.Services
             if (propType == typeof(bool))
             {
                 return _currentEnv?.DbType == DataBaseType.PostgreSQL ? "false" : "0";
+            }
+
+            if (IsJsonNetType(propType) || columnAttr?.IsJson == true)
+            {
+                return string.Empty;
             }
 
             return string.Empty;
@@ -1443,6 +1453,8 @@ namespace Aisix.CodeFirst.Services
                 return "char(36)";
             if (propType == typeof(byte[]))
                 return "blob";
+            if (IsJsonNetType(propType))
+                return "json";
 
             return "varchar(255)";
         }
@@ -1480,6 +1492,8 @@ namespace Aisix.CodeFirst.Services
                 return "uuid";
             if (propType == typeof(byte[]))
                 return "bytea";
+            if (IsJsonNetType(propType))
+                return "jsonb";
 
             return "varchar(255)";
         }
@@ -2539,8 +2553,18 @@ LIMIT 1;";
             return GetPropertyTypeFamily(propType) == GetDatabaseTypeFamily(dbColumn.DataType);
         }
 
+        private bool IsJsonNetType(Type propType)
+        {
+            var fullName = propType.FullName ?? string.Empty;
+            return fullName == "Newtonsoft.Json.Linq.JObject"
+                || fullName == "Newtonsoft.Json.Linq.JArray"
+                || fullName == "Newtonsoft.Json.Linq.JToken";
+        }
+
         private string GetPropertyTypeFamily(Type propType)
         {
+            if (IsJsonNetType(propType))
+                return "json";
             if (propType == typeof(int))
                 return "int";
             if (propType == typeof(long))
@@ -2587,6 +2611,8 @@ LIMIT 1;";
                 return "bool";
             if (type.Contains("timestamp") || type.Contains("datetime") || type == "date" || type == "time")
                 return "datetime";
+            if (type.Contains("json"))
+                return "json";
             if (type.Contains("char") || type.Contains("text") || type.Contains("json"))
                 return "string";
             if (type.Contains("uuid") || type.Contains("guid") || type.Contains("uniqueidentifier"))
