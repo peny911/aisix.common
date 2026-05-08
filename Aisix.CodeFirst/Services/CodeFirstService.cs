@@ -525,6 +525,7 @@ namespace Aisix.CodeFirst.Services
                     if (!tableExists)
                     {
                         ExecuteCreateTable(entity, tableName);
+                        SyncTableComment(tableName, entity);
                         CreateIndexesFromEntity(tableName, entity);
                         SyncColumnComments(tableName, entity);
                         RepairPostgresIdentityDefaults(tableName, entity);
@@ -538,6 +539,7 @@ namespace Aisix.CodeFirst.Services
                     // PostgreSQL 空表优先走我们自己的迁移 SQL，避免 SqlSugar 在现有表上重复补主键/危险改列。
                     if (TryApplyPostgresEmptyTableMigration(entity, tableName))
                     {
+                        SyncTableComment(tableName, entity);
                         CreateIndexesFromEntity(tableName, entity);
                         SyncColumnComments(tableName, entity);
                         RepairPostgresIdentityDefaults(tableName, entity);
@@ -545,6 +547,16 @@ namespace Aisix.CodeFirst.Services
                         PrintSuccess($"  + {tableName} 更新成功");
                         success++;
                         logEntries.Add($"[OK] {tableName} (empty-table migration)");
+                        continue;
+                    }
+
+                    if (IsCommentOnlyDifferences(differences))
+                    {
+                        SyncTableComment(tableName, entity);
+                        SyncColumnComments(tableName, entity);
+                        PrintSuccess($"  + {tableName} 更新成功");
+                        success++;
+                        logEntries.Add($"[OK] {tableName} (comment-only)");
                         continue;
                     }
 
@@ -562,6 +574,8 @@ namespace Aisix.CodeFirst.Services
                     {
                         _db!.CodeFirst.InitTables(entity);
                     }
+
+                    SyncTableComment(tableName, entity);
 
                     // 创建索引（从实体特性中获取所有索引定义）
                     CreateIndexesFromEntity(tableName, entity);
@@ -730,11 +744,36 @@ namespace Aisix.CodeFirst.Services
                 {
                     // 获取所有分表
                     var splitTables = GetSplitTableNames(entity);
+                    var sampleTable = splitTables.FirstOrDefault();
+
+                    if (!string.IsNullOrEmpty(sampleTable))
+                    {
+                        var differences = GetTableDifferencesForSplit(entity, sampleTable);
+                        if (IsCommentOnlyDifferences(differences))
+                        {
+                            foreach (var splitTable in splitTables)
+                            {
+                                SyncTableComment(splitTable, entity);
+                                SyncColumnComments(splitTable, entity);
+                            }
+
+                            PrintSuccess($"  + {tableName} 所有分表注释同步成功");
+                            success++;
+                            logEntries.Add($"[OK] {tableName} - {splitTables.Count} 张分表 (comment-only)");
+                            continue;
+                        }
+                    }
 
                     Console.WriteLine($"  [{tableName}] 正在更新 {splitTables.Count} 张分表...");
 
                     // 使用 SplitTables().InitTables 更新所有分表
                     _db!.CodeFirst.SplitTables().InitTables(entity);
+
+                    foreach (var splitTable in splitTables)
+                    {
+                        SyncTableComment(splitTable, entity);
+                        SyncColumnComments(splitTable, entity);
+                    }
 
                     PrintSuccess($"  + {tableName} 所有分表更新成功");
                     success++;
@@ -844,6 +883,17 @@ namespace Aisix.CodeFirst.Services
                         continue;
                     }
 
+                    if (IsCommentOnlyDifferences(differences))
+                    {
+                        SyncTableComment(tableName, entity);
+                        SyncColumnComments(tableName, entity);
+
+                        PrintSuccess($"  + {tableName} 更新成功");
+                        success++;
+                        logEntries.Add($"[OK] {tableName} (comment-only)");
+                        continue;
+                    }
+
                     // 执行更新
                     if (isSplitTemplate)
                     {
@@ -855,6 +905,9 @@ namespace Aisix.CodeFirst.Services
                     {
                         _db!.CodeFirst.InitTables(entity);
                     }
+
+                    SyncTableComment(tableName, entity);
+                    SyncColumnComments(tableName, entity);
 
                     PrintSuccess($"  + {tableName} 更新成功");
                     success++;
@@ -2150,6 +2203,51 @@ LIMIT 1;";
         private static string NormalizeQualifiedIdentifier(string identifier)
         {
             return string.Join(".", SplitQualifiedIdentifier(identifier)).ToLowerInvariant();
+        }
+
+        private bool IsCommentOnlyDifferences(List<string> differences)
+        {
+            return differences.Count > 0
+                && differences.All(d =>
+                    d.StartsWith("~ 表注释变更:", StringComparison.Ordinal) ||
+                    d.StartsWith("~ 字段注释变更 [", StringComparison.Ordinal));
+        }
+
+        /// <summary>
+        /// 同步表注释到数据库（优先使用 SugarTable.TableDescription，其次使用 Summary）
+        /// </summary>
+        private void SyncTableComment(string tableName, Type entityType)
+        {
+            try
+            {
+                if (_db == null || _dialect == null)
+                {
+                    return;
+                }
+
+                var entityDescription = GetTableDescription(entityType);
+                if (string.IsNullOrEmpty(entityDescription))
+                {
+                    return;
+                }
+
+                var tableInfo = _db.DbMaintenance.GetTableInfoList(false)
+                    .FirstOrDefault(t => t.Name.Equals(tableName, StringComparison.OrdinalIgnoreCase));
+                var dbDescription = tableInfo?.Description ?? string.Empty;
+
+                if (string.Equals(entityDescription, dbDescription, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                var sql = _dialect.BuildSetTableCommentSql(tableName, entityDescription);
+                _db.Ado.ExecuteCommand(sql);
+                Console.WriteLine("    同步表注释: 1 个");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    同步表注释失败: {ex.Message}");
+            }
         }
 
         /// <summary>

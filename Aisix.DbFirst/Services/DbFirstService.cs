@@ -257,6 +257,7 @@ namespace Aisix.DbFirst.Services
                 var columns = _db.DbMaintenance.GetColumnInfosByTableName(tableName);
                 var tableInfo = _db.DbMaintenance.GetTableInfoList().FirstOrDefault(t => t.Name == tableName);
                 var tableDescription = tableInfo?.Description ?? tableName;
+                var escapedTableDescription = tableDescription.Replace("\"", "\\\"");
 
                 var sb = new StringBuilder();
 
@@ -282,7 +283,7 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine("    /// <summary>");
                 sb.AppendLine($"    /// {tableDescription}");
                 sb.AppendLine("    /// </summary>");
-                sb.AppendLine($"    [SugarTable(\"{tableName}\")]");
+                sb.AppendLine($"    [SugarTable(\"{tableName}\", TableDescription = \"{escapedTableDescription}\")]");
 
                 // 生成索引特性
                 GenerateIndexAttributes(sb, tableName);

@@ -14,6 +14,12 @@ namespace Aisix.CodeFirst.Dialects
             return $"ALTER TABLE {QuoteIdentifier(tableName)} {indexKeyword} {QuoteIdentifier(indexName)} ({quotedColumns})";
         }
 
+        public string BuildSetTableCommentSql(string tableName, string comment)
+        {
+            var escapedComment = comment.Replace("'", "''");
+            return $"ALTER TABLE {QuoteIdentifier(tableName)} COMMENT = '{escapedComment}'";
+        }
+
         public string BuildSetColumnCommentSql(string tableName, string columnName, string comment, string? dbColumnType = null)
         {
             if (string.IsNullOrWhiteSpace(dbColumnType))
