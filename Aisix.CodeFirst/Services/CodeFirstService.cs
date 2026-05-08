@@ -508,6 +508,8 @@ namespace Aisix.CodeFirst.Services
                         continue;
                     }
 
+                    var tableExists = IsTableExists(tableName);
+
                     // PostgreSQL 跨类型家族变更经常需要 USING 显式转换。
                     // 但如果表是空的，可以直接放行，让数据库在无数据场景下完成改列。
                     var blockingTypeChanges = GetBlockingPostgresTypeChanges(entity, tableName);
@@ -517,6 +519,19 @@ namespace Aisix.CodeFirst.Services
                         PrintError($"  x {tableName} 更新已阻止: {reason}");
                         failed++;
                         logEntries.Add($"[BLOCK] {tableName} - {reason}");
+                        continue;
+                    }
+
+                    if (!tableExists)
+                    {
+                        ExecuteCreateTable(entity, tableName);
+                        CreateIndexesFromEntity(tableName, entity);
+                        SyncColumnComments(tableName, entity);
+                        RepairPostgresIdentityDefaults(tableName, entity);
+
+                        PrintSuccess($"  + {tableName} 创建成功");
+                        success++;
+                        logEntries.Add($"[OK] {tableName} (create-table)");
                         continue;
                     }
 
@@ -2323,9 +2338,34 @@ LIMIT 1;";
             return blockingChanges;
         }
 
+        private void ExecuteCreateTable(Type entity, string tableName)
+        {
+            if (_db == null)
+            {
+                throw new InvalidOperationException("数据库连接未初始化。");
+            }
+
+            var isSplitTemplate = _splitEntities.Contains(entity);
+            if (isSplitTemplate)
+            {
+                _db.MappingTables.Add(entity.Name, tableName);
+                _db.CodeFirst.InitTables(entity);
+                _db.MappingTables.RemoveAll(m => m.EntityName == entity.Name);
+            }
+            else
+            {
+                _db.CodeFirst.InitTables(entity);
+            }
+
+            if (!IsTableExists(tableName))
+            {
+                throw new InvalidOperationException($"建表后仍未找到表 {tableName}");
+            }
+        }
+
         private bool TryApplyPostgresEmptyTableMigration(Type entityType, string tableName)
         {
-            if (_db == null || _currentEnv?.DbType != DataBaseType.PostgreSQL || !IsTableEmpty(tableName))
+            if (_db == null || _currentEnv?.DbType != DataBaseType.PostgreSQL || !IsTableExists(tableName) || !IsTableEmpty(tableName))
             {
                 return false;
             }
@@ -2370,9 +2410,19 @@ LIMIT 1;";
                 return false;
             }
 
+            if (!IsTableExists(tableName))
+            {
+                return false;
+            }
+
             var sql = $"SELECT 1 FROM {QuoteIdentifier(tableName)} LIMIT 1;";
             var hasRows = _db.Ado.SqlQuery<int>(sql);
             return hasRows == null || hasRows.Count == 0;
+        }
+
+        private bool IsTableExists(string tableName)
+        {
+            return _db != null && _db.DbMaintenance.IsAnyTable(tableName, false);
         }
 
         private string BuildPostgresAlterTypeSql(string quotedTable, string quotedColumn, string targetDataType, bool hasCrossFamilyTypeChange)

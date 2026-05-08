@@ -8,11 +8,11 @@ namespace Aisix.Common.Utils
     /// </summary>
     public static class EntityExtension
     {
-        private const string CreatedKey = "created";
-        private const string LastModifiedKey = "last_modified";
+        private static readonly string[] CreatedKeys = ["created", "created_at"];
+        private static readonly string[] LastModifiedKeys = ["last_modified", "updated_at"];
         private const string CreatedIdKey = "created_id";
         private const string LastModifiedIdKey = "last_modified_id";
-        private const string DeleteTimeKey = "delete_time";
+        private static readonly string[] DeleteTimeKeys = ["delete_time", "deleted_at"];
 
         // 使用线程安全的字典缓存类型的属性信息,提升反射性能
         private static readonly ConcurrentDictionary<Type, PropertyCache> PropertyCaches = new();
@@ -36,12 +36,26 @@ namespace Aisix.Common.Utils
         {
             return PropertyCaches.GetOrAdd(type, t => new PropertyCache
             {
-                Created = t.GetProperty(CreatedKey),
-                LastModified = t.GetProperty(LastModifiedKey),
+                Created = GetPropertyByNames(t, CreatedKeys),
+                LastModified = GetPropertyByNames(t, LastModifiedKeys),
                 CreatedId = t.GetProperty(CreatedIdKey),
                 LastModifiedId = t.GetProperty(LastModifiedIdKey),
-                DeleteTime = t.GetProperty(DeleteTimeKey)
+                DeleteTime = GetPropertyByNames(t, DeleteTimeKeys)
             });
+        }
+
+        private static PropertyInfo? GetPropertyByNames(Type type, IEnumerable<string> names)
+        {
+            foreach (var name in names)
+            {
+                var property = type.GetProperty(name);
+                if (property != null)
+                {
+                    return property;
+                }
+            }
+
+            return null;
         }
 
         #region 单实体扩展方法
