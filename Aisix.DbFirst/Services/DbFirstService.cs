@@ -439,6 +439,11 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine("using Aisix.Common.Db;");
                 sb.AppendLine("using Aisix.Common.Db.Service;");
 
+                if (NeedsQueryNamespace(customCode))
+                {
+                    sb.AppendLine($"using {GetQueryNamespace()};");
+                }
+
                 foreach (var ns in _config.AdditionalUsings)
                 {
                     sb.AppendLine($"using {ns};");
@@ -508,6 +513,11 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine("using System;");
                 sb.AppendLine("using Aisix.Common.Db;");
                 sb.AppendLine("using Aisix.Common.Db.Service;");
+
+                if (NeedsQueryNamespace(customCode))
+                {
+                    sb.AppendLine($"using {GetQueryNamespace()};");
+                }
 
                 foreach (var ns in _config.AdditionalUsings)
                 {
@@ -729,6 +739,10 @@ LIMIT 1;";
                 {
                     if ((type.Contains("decimal") || type.Contains("numeric")) && !defaultValue.EndsWith("M", StringComparison.OrdinalIgnoreCase))
                         return defaultValue + "M";
+
+                    if ((type.Contains("float") || type.Contains("real")) && !defaultValue.EndsWith("F", StringComparison.OrdinalIgnoreCase))
+                        return defaultValue + "F";
+
                     return defaultValue;
                 }
 
@@ -761,6 +775,19 @@ LIMIT 1;";
                 return match.Success ? match.Groups[1].Value : "";
             }
             catch { return ""; }
+        }
+
+        private bool NeedsQueryNamespace(string customCode)
+        {
+            if (string.IsNullOrWhiteSpace(customCode))
+                return false;
+
+            return Regex.IsMatch(customCode, @"\b[A-Za-z_][A-Za-z0-9_]*Query\b");
+        }
+
+        private string GetQueryNamespace()
+        {
+            return $"{_config.SolutionName}.Interface.Model.Query";
         }
 
         private static string ToCamelCase(string value, bool upperAtFirst = true)
