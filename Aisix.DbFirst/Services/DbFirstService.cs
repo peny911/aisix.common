@@ -380,11 +380,6 @@ namespace Aisix.DbFirst.Services
             if (column.Length > 0 && IsStringType(column.DataType)) attrs.Add($"Length = {column.Length}");
             attrs.Add($"IsNullable = {column.IsNullable.ToString().ToLower()}");
 
-            if (IsJsonColumn(column))
-            {
-                attrs.Add("IsJson = true");
-            }
-
             if (!string.IsNullOrEmpty(normalizedDefaultValue))
             {
                 attrs.Add($"DefaultValue = \"{normalizedDefaultValue}\"");
@@ -677,7 +672,8 @@ LIMIT 1;";
             var type = dbType.ToLower();
             string csharpType;
 
-            if (type.Contains("json")) csharpType = "JObject";
+            // 项目约定：PostgreSQL json/jsonb 在实体层统一映射为字符串，业务层再按需解析。
+            if (type.Contains("json")) csharpType = "string";
             else if (type.Contains("bigint") || type == "int8" || type.Contains("bigserial")) csharpType = "long";
             else if (type.Contains("tinyint")) csharpType = "byte";
             else if (type.Contains("smallint") || type == "int2" || type.Contains("smallserial")) csharpType = "short";
@@ -694,8 +690,6 @@ LIMIT 1;";
 
             if (isNullable && csharpType == "string")
                 csharpType = "string?";
-            else if (isNullable && csharpType == "JObject")
-                csharpType = "JObject?";
             else if (isNullable && csharpType != "byte[]")
                 csharpType += "?";
 
