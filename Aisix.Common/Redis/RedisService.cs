@@ -766,6 +766,11 @@ namespace Aisix.Common.Redis
             return GetDatabase(dbIndex).CreateBatch();
         }
 
+        public ISubscriber GetSubscriber()
+        {
+            return _connection.GetSubscriber();
+        }
+
         public void Dispose()
         {
             Dispose(true);

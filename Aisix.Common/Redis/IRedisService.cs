@@ -90,6 +90,7 @@ namespace Aisix.Common.Redis
         Task<long> ListLengthAsync(string key, int? dbIndex = null);
         ITransaction CreateTransaction(int? dbIndex = null);
         IBatch CreateBatch(int? dbIndex = null);
+        ISubscriber GetSubscriber();
 
         /// <summary>
         /// Set if Not Exists - 只有键不存在时才设置（原子操作）
