@@ -2,6 +2,7 @@ using SqlSugar;
 using System.Text;
 using System.Text.RegularExpressions;
 using Aisix.Common.Db;
+using System.Collections.Generic;
 
 namespace Aisix.DbFirst.Services
 {
@@ -259,6 +260,7 @@ namespace Aisix.DbFirst.Services
                 var tableDescription = tableInfo?.Description ?? tableName;
                 var escapedTableDescription = tableDescription.Replace("\"", "\\\"");
                 var hasJsonColumn = columns.Any(IsJsonColumn);
+                var existingPropertyTypes = LoadExistingPropertyTypes(tableName);
 
                 var sb = new StringBuilder();
 
@@ -274,10 +276,8 @@ namespace Aisix.DbFirst.Services
                 sb.AppendLine();
                 sb.AppendLine("#nullable enable");
                 sb.AppendLine();
-                if (hasJsonColumn)
-                {
-                    sb.AppendLine("using Newtonsoft.Json.Linq;");
-                }
+                if (hasJsonColumn || existingPropertyTypes.Values.Any(NeedsGenericCollectionUsing))
+                    sb.AppendLine("using System.Collections.Generic;");
                 sb.AppendLine("using SqlSugar;");
                 sb.AppendLine("using System;");
                 sb.AppendLine();
@@ -299,7 +299,7 @@ namespace Aisix.DbFirst.Services
                 // 生成属性
                 foreach (var column in columns)
                 {
-                    GenerateProperty(sb, column, tableName);
+                    GenerateProperty(sb, column, tableName, existingPropertyTypes);
                 }
 
                 sb.AppendLine("    }");
@@ -362,12 +362,13 @@ namespace Aisix.DbFirst.Services
         /// <summary>
         /// 生成属性
         /// </summary>
-        private void GenerateProperty(StringBuilder sb, DbColumnInfo column, string tableName)
+        private void GenerateProperty(StringBuilder sb, DbColumnInfo column, string tableName, Dictionary<string, string> existingPropertyTypes)
         {
             var columnDescription = column.ColumnDescription ?? "";
             var normalizedDefaultValue = NormalizeDefaultValue(column);
             // PostgreSQL 的 identity 列在部分场景下不会被 SqlSugar 正确标记，这里补一层兜底识别。
             var isIdentity = IsIdentityColumn(tableName, column);
+            var propertyType = GetPropertyType(column, existingPropertyTypes);
 
             sb.AppendLine("        /// <summary>");
             sb.AppendLine($"        /// {columnDescription}");
@@ -387,6 +388,8 @@ namespace Aisix.DbFirst.Services
 
             if (NeedsDataTypeAttribute(column.DataType))
                 attrs.Add($"ColumnDataType = \"{column.DataType.ToLower()}\"");
+            if (IsJsonColumn(column) && IsStrongJsonType(propertyType))
+                attrs.Add("IsJson = true");
 
             if (!string.IsNullOrEmpty(columnDescription))
                 attrs.Add($"ColumnDescription = \"{columnDescription.Replace("\"", "\\\"")}\"");
@@ -394,8 +397,11 @@ namespace Aisix.DbFirst.Services
             if (attrs.Count > 0)
                 sb.AppendLine($"        [SugarColumn({string.Join(", ", attrs)})]");
 
-            var propertyType = GetCSharpType(column.DataType, column.IsNullable);
             var initValue = GetPropertyInitializer(column, normalizedDefaultValue);
+            if (string.IsNullOrEmpty(initValue) && IsJsonColumn(column))
+            {
+                initValue = GetJsonPropertyInitializer(propertyType, column.IsNullable);
+            }
 
             if (!string.IsNullOrEmpty(initValue))
                 sb.AppendLine($"        public {propertyType} {column.DbColumnName} {{ get; set; }} = {initValue};");
@@ -634,6 +640,62 @@ LIMIT 1";
         {
             var dataType = column.DataType?.ToLowerInvariant() ?? string.Empty;
             return dataType.Contains("json");
+        }
+
+        private Dictionary<string, string> LoadExistingPropertyTypes(string tableName)
+        {
+            var fileName = Path.Combine(_config.EntityOutputPath, $"{tableName}.cs");
+            if (!File.Exists(fileName))
+                return new Dictionary<string, string>(StringComparer.Ordinal);
+
+            var content = File.ReadAllText(fileName);
+            var matches = Regex.Matches(content, @"public\s+(?<type>.+?)\s+(?<name>[A-Za-z0-9_]+)\s*\{\s*get;\s*set;\s*\}");
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (Match match in matches)
+            {
+                var propertyName = match.Groups["name"].Value;
+                var propertyType = match.Groups["type"].Value.Trim();
+                if (!string.IsNullOrWhiteSpace(propertyName) && !string.IsNullOrWhiteSpace(propertyType))
+                {
+                    result[propertyName] = propertyType;
+                }
+            }
+
+            return result;
+        }
+
+        private string GetPropertyType(DbColumnInfo column, Dictionary<string, string> existingPropertyTypes)
+        {
+            var defaultType = GetCSharpType(column.DataType, column.IsNullable);
+            if (!IsJsonColumn(column))
+                return defaultType;
+
+            if (!existingPropertyTypes.TryGetValue(column.DbColumnName, out var existingType))
+                return defaultType;
+
+            return IsStrongJsonType(existingType) ? existingType : defaultType;
+        }
+
+        private bool IsStrongJsonType(string propertyType)
+        {
+            var normalized = propertyType.Trim();
+            return !string.Equals(normalized, "string", StringComparison.Ordinal)
+                && !string.Equals(normalized, "string?", StringComparison.Ordinal);
+        }
+
+        private bool NeedsGenericCollectionUsing(string propertyType)
+        {
+            return propertyType.Contains("List<", StringComparison.Ordinal)
+                || propertyType.Contains("Dictionary<", StringComparison.Ordinal);
+        }
+
+        private string? GetJsonPropertyInitializer(string propertyType, bool isNullable)
+        {
+            if (isNullable || propertyType.EndsWith("?", StringComparison.Ordinal))
+                return null;
+
+            return NeedsGenericCollectionUsing(propertyType) ? "new()" : null;
         }
 
         private bool NeedsDataTypeAttribute(string dataType)
