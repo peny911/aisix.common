@@ -2335,12 +2335,17 @@ LIMIT 1;";
             var diffs = new List<string>();
             var columnName = columnAttr?.ColumnName ?? prop.Name;
             var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            var hasExplicitColumnType = !string.IsNullOrEmpty(columnAttr?.ColumnDataType);
+            var isJsonColumn = columnAttr?.IsJson == true || IsJsonNetType(propType);
 
-            // 没有显式 ColumnDataType 时，也要根据实体属性推导出的目标类型来比较，避免漏报 string -> decimal 这类变更。
-            var targetDataType = ResolveColumnDataType(propType, columnAttr);
-            if (!IsEquivalentDatabaseType(propType, dbColumn))
+            // 只有在没有显式 ColumnDataType 且不是 JSON 列时，才用 CLR 类型族比较，避免 jsonb → jsonb 被误报。
+            if (!hasExplicitColumnType && !isJsonColumn)
             {
-                diffs.Add($"~ 字段类型变更 [{columnName}]: {dbColumn.DataType} → {targetDataType}");
+                var targetDataType = ResolveColumnDataType(propType, columnAttr);
+                if (!IsEquivalentDatabaseType(propType, dbColumn))
+                {
+                    diffs.Add($"~ 字段类型变更 [{columnName}]: {dbColumn.DataType} → {targetDataType}");
+                }
             }
 
             // 检查字段长度变更
