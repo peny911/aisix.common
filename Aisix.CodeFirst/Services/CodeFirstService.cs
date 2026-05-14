@@ -536,8 +536,9 @@ namespace Aisix.CodeFirst.Services
                         continue;
                     }
 
-                    // PostgreSQL 空表优先走我们自己的迁移 SQL，避免 SqlSugar 在现有表上重复补主键/危险改列。
-                    if (TryApplyPostgresEmptyTableMigration(entity, tableName))
+                    // PostgreSQL 现有表优先走我们自己的迁移 SQL，避免 SqlSugar 在已存在主键的表上重复补主键。
+                    // 这里统一覆盖空表/非空表，删除列仍由 AllowDeleteColumn 控制。
+                    if (TryApplyPostgresManagedMigration(entity, tableName))
                     {
                         SyncTableComment(tableName, entity);
                         CreateIndexesFromEntity(tableName, entity);
@@ -546,7 +547,7 @@ namespace Aisix.CodeFirst.Services
 
                         PrintSuccess($"  + {tableName} 更新成功");
                         success++;
-                        logEntries.Add($"[OK] {tableName} (empty-table migration)");
+                        logEntries.Add($"[OK] {tableName} (postgres-managed migration)");
                         continue;
                     }
 
@@ -2480,9 +2481,9 @@ LIMIT 1;";
             }
         }
 
-        private bool TryApplyPostgresEmptyTableMigration(Type entityType, string tableName)
+        private bool TryApplyPostgresManagedMigration(Type entityType, string tableName)
         {
-            if (_db == null || _currentEnv?.DbType != DataBaseType.PostgreSQL || !IsTableExists(tableName) || !IsTableEmpty(tableName))
+            if (_db == null || _currentEnv?.DbType != DataBaseType.PostgreSQL || !IsTableExists(tableName))
             {
                 return false;
             }
@@ -2493,6 +2494,7 @@ LIMIT 1;";
                 return false;
             }
 
+            var executed = false;
             foreach (var sql in sqlLines)
             {
                 var trimmedSql = sql.Trim();
@@ -2503,9 +2505,10 @@ LIMIT 1;";
 
                 if (trimmedSql.StartsWith("-- [危险] ALTER TABLE", StringComparison.OrdinalIgnoreCase) && _currentEnv.AllowDeleteColumn)
                 {
-                    // 空表删除列没有数据风险，这里允许把危险提示转成真实执行语句。
+                    // 删除列默认保留为危险操作，仅在显式允许时执行。
                     var executableSql = trimmedSql.Replace("-- [危险] ", "", StringComparison.Ordinal);
                     _db.Ado.ExecuteCommand(executableSql.TrimEnd(';'));
+                    executed = true;
                     continue;
                 }
 
@@ -2515,9 +2518,10 @@ LIMIT 1;";
                 }
 
                 _db.Ado.ExecuteCommand(trimmedSql.TrimEnd(';'));
+                executed = true;
             }
 
-            return true;
+            return executed;
         }
 
         private bool IsTableEmpty(string tableName)
