@@ -1302,7 +1302,7 @@ namespace Aisix.CodeFirst.Services
             var dbDescription = (dbColumn.ColumnDescription ?? "").Trim();
             if (!string.IsNullOrEmpty(description) && !string.Equals(description, dbDescription, StringComparison.Ordinal) && _dialect != null)
             {
-                sqlList.Add($"{_dialect.BuildSetColumnCommentSql(tableName, columnName, description, dbColumn.DataType)};");
+                sqlList.Add($"{_dialect.BuildSetColumnCommentSql(tableName, columnName, description, BuildFullColumnDefinition(dbColumn))};");
             }
 
             return sqlList;
@@ -1856,7 +1856,7 @@ namespace Aisix.CodeFirst.Services
         /// <summary>
         /// 规范化数据库索引名，去掉分表名后缀
         /// 只有分表索引（带日期后缀）才需要规范化，普通表索引直接返回原名
-        /// 例如：idx_status_ssp_placement_20260201 -> idx_status（分表索引）
+        /// 例如：idx_report_date_general_dsp_hourly_report_20260501 -> idx_report_date（分表索引）
         /// 例如：uk_ssp_placement_key -> uk_ssp_placement_key（普通表索引，不变）
         /// </summary>
         private string NormalizeIndexName(string dbIndexName, string tableName)
@@ -1870,19 +1870,22 @@ namespace Aisix.CodeFirst.Services
             }
 
             // 有日期后缀，是分表索引，需要去掉表名和日期后缀
-            // 例如：idx_status_ssp_placement_20260201 -> idx_status
+            // 例如：idx_report_date_general_dsp_hourly_report_20260501 -> idx_report_date
 
             // 先去掉日期后缀
             var withoutDate = Regex.Replace(dbIndexName, datePattern, "");
 
+            // 表名也可能带日期后缀（分表场景），需要同步去掉以便匹配
+            var baseTableName = Regex.Replace(tableName, datePattern, "").TrimEnd('_');
+
             // 再去掉表名后缀
-            if (withoutDate.EndsWith(tableName, StringComparison.OrdinalIgnoreCase))
+            if (withoutDate.EndsWith(baseTableName, StringComparison.OrdinalIgnoreCase))
             {
-                return withoutDate.Substring(0, withoutDate.Length - tableName.Length).TrimEnd('_');
+                return withoutDate.Substring(0, withoutDate.Length - baseTableName.Length).TrimEnd('_');
             }
 
             // 处理表名在中间的情况
-            var tableIndex = withoutDate.IndexOf(tableName, StringComparison.OrdinalIgnoreCase);
+            var tableIndex = withoutDate.IndexOf(baseTableName, StringComparison.OrdinalIgnoreCase);
             if (tableIndex > 0)
             {
                 return withoutDate.Substring(0, tableIndex).TrimEnd('_');
@@ -2311,7 +2314,7 @@ LIMIT 1;";
                     // 只有描述发生变化时才更新
                     if (!string.Equals(entityDescription, dbDescription, StringComparison.Ordinal))
                     {
-                        var sql = _dialect.BuildSetColumnCommentSql(tableName, columnName, entityDescription, dbColumn.DataType);
+                        var sql = _dialect.BuildSetColumnCommentSql(tableName, columnName, entityDescription, BuildFullColumnDefinition(dbColumn));
                         _db.Ado.ExecuteCommand(sql);
                         updated++;
                     }
@@ -2406,6 +2409,57 @@ LIMIT 1;";
         {
             if (string.IsNullOrEmpty(value)) return "";
             return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "...";
+        }
+
+        /// <summary>
+        /// 从 DbColumnInfo 构建完整的列定义（类型+长度+可空性+默认值），
+        /// 用于 MySQL MODIFY COLUMN 语句（仅修改注释时需保持原有列定义不变）
+        /// </summary>
+        private string BuildFullColumnDefinition(DbColumnInfo col)
+        {
+            var type = col.DataType.ToLower();
+            string typePart;
+
+            // 需要显式长度的类型
+            if (type is "char" or "varchar" or "binary" or "varbinary" or "nchar" or "nvarchar"
+                && col.Length > 0)
+            {
+                typePart = $"{type}({col.Length})";
+            }
+            else if (type is "decimal" or "numeric" && col.Length > 0)
+            {
+                typePart = $"{type}({col.Length},{col.Scale})";
+            }
+            else
+            {
+                // int, bigint, text, datetime 等不需要长度
+                typePart = type;
+            }
+
+            // 可空性
+            typePart += col.IsNullable ? " NULL" : " NOT NULL";
+
+            // 默认值
+            if (col.DefaultValue != null)
+            {
+                var def = col.DefaultValue.Trim();
+                if (def.Length > 0)
+                {
+                    // MySQL 函数和特殊值不加引号
+                    if (def.Equals("NULL", StringComparison.OrdinalIgnoreCase)
+                        || def.StartsWith("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase)
+                        || def.StartsWith("NOW(", StringComparison.OrdinalIgnoreCase))
+                    {
+                        typePart += $" DEFAULT {def}";
+                    }
+                    else
+                    {
+                        typePart += $" DEFAULT '{def.Replace("'", "''")}'";
+                    }
+                }
+            }
+
+            return typePart;
         }
 
         private List<string> GetBlockingPostgresTypeChanges(Type entityType, string tableName)

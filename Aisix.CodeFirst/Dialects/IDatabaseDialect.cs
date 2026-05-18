@@ -8,6 +8,6 @@ namespace Aisix.CodeFirst.Dialects
 
         string BuildSetTableCommentSql(string tableName, string comment);
 
-        string BuildSetColumnCommentSql(string tableName, string columnName, string comment, string? dbColumnType = null);
+        string BuildSetColumnCommentSql(string tableName, string columnName, string comment, string? fullColumnDefinition = null);
     }
 }

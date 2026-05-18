@@ -20,15 +20,15 @@ namespace Aisix.CodeFirst.Dialects
             return $"ALTER TABLE {QuoteIdentifier(tableName)} COMMENT = '{escapedComment}'";
         }
 
-        public string BuildSetColumnCommentSql(string tableName, string columnName, string comment, string? dbColumnType = null)
+        public string BuildSetColumnCommentSql(string tableName, string columnName, string comment, string? fullColumnDefinition = null)
         {
-            if (string.IsNullOrWhiteSpace(dbColumnType))
+            if (string.IsNullOrWhiteSpace(fullColumnDefinition))
             {
-                throw new ArgumentException("MySQL 同步字段注释时需要提供数据库字段类型。", nameof(dbColumnType));
+                throw new ArgumentException("MySQL 同步字段注释时需要提供完整的字段定义（含类型、长度、可空性等）。", nameof(fullColumnDefinition));
             }
 
             var escapedComment = comment.Replace("'", "''");
-            return $"ALTER TABLE {QuoteIdentifier(tableName)} MODIFY COLUMN {QuoteIdentifier(columnName)} {dbColumnType} COMMENT '{escapedComment}'";
+            return $"ALTER TABLE {QuoteIdentifier(tableName)} MODIFY COLUMN {QuoteIdentifier(columnName)} {fullColumnDefinition} COMMENT '{escapedComment}'";
         }
     }
 }

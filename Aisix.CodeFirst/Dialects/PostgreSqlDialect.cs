@@ -20,7 +20,7 @@ namespace Aisix.CodeFirst.Dialects
             return $"COMMENT ON TABLE {QuoteIdentifier(tableName)} IS '{escapedComment}'";
         }
 
-        public string BuildSetColumnCommentSql(string tableName, string columnName, string comment, string? dbColumnType = null)
+        public string BuildSetColumnCommentSql(string tableName, string columnName, string comment, string? fullColumnDefinition = null)
         {
             var escapedComment = comment.Replace("'", "''");
             return $"COMMENT ON COLUMN {QuoteIdentifier(tableName)}.{QuoteIdentifier(columnName)} IS '{escapedComment}'";
