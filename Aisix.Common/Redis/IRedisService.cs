@@ -40,6 +40,18 @@ namespace Aisix.Common.Redis
         string?[]? SetMembers(string key, int? dbIndex = null);
         string?[] SetRandomMembers(string key, int count = 9, int? dbIndex = null);
         bool SetRemove(string key, string member, int? dbIndex = null);
+        /// <summary>
+        /// 添加 Sorted Set member，可通过 When.NotExists 实现原子去重。
+        /// </summary>
+        bool SortedSetAdd(string key, string member, double score, When when = When.Always, int? dbIndex = null);
+        /// <summary>
+        /// 按 score 范围删除 Sorted Set member，用于清理过期窗口。
+        /// </summary>
+        long SortedSetRemoveRangeByScore(string key, double start, double stop, int? dbIndex = null);
+        /// <summary>
+        /// 删除指定 Sorted Set member，用于业务失败后的去重回滚。
+        /// </summary>
+        bool SortedSetRemove(string key, string member, int? dbIndex = null);
         long SetLength(string key, int? dbIndex = null);
         long ListLength(string key, int? dbIndex = null);
         #endregion
@@ -83,6 +95,18 @@ namespace Aisix.Common.Redis
         Task<string?[]?> SetMembersAsync(string key, int? dbIndex = null);
         Task<string?[]?> SetRandomMembersAsync(string key, int count = 9, int? dbIndex = null);
         Task<bool> SetRemoveAsync(string key, string member, int? dbIndex = null);
+        /// <summary>
+        /// 添加 Sorted Set member，可通过 When.NotExists 实现原子去重。
+        /// </summary>
+        Task<bool> SortedSetAddAsync(string key, string member, double score, When when = When.Always, int? dbIndex = null);
+        /// <summary>
+        /// 按 score 范围删除 Sorted Set member，用于清理过期窗口。
+        /// </summary>
+        Task<long> SortedSetRemoveRangeByScoreAsync(string key, double start, double stop, int? dbIndex = null);
+        /// <summary>
+        /// 删除指定 Sorted Set member，用于业务失败后的去重回滚。
+        /// </summary>
+        Task<bool> SortedSetRemoveAsync(string key, string member, int? dbIndex = null);
         Task<long> SetLengthAsync(string key, int? dbIndex = null);
         string ListGetByIndex(string key, long index, int? dbIndex = null);
         Task<string?[]?> ListRangeAsync(string key, long start = 0, long stop = -1, int? dbIndex = null);

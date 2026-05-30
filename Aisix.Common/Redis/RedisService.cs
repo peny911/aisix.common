@@ -631,6 +631,66 @@ namespace Aisix.Common.Redis
             return await db.SetRemoveAsync(MergeKey(key), new RedisValue(member));
         }
 
+        /// <summary>
+        /// 添加 Sorted Set member，可通过 When.NotExists 实现原子去重。
+        /// </summary>
+        public bool SortedSetAdd(string key, string member, double score, When when = When.Always, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return db.SortedSetAdd(key, member, score, when);
+        }
+
+        /// <summary>
+        /// 添加 Sorted Set member，可通过 When.NotExists 实现原子去重。
+        /// </summary>
+        public async Task<bool> SortedSetAddAsync(string key, string member, double score, When when = When.Always, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.SortedSetAddAsync(key, member, score, when);
+        }
+
+        /// <summary>
+        /// 按 score 范围删除 Sorted Set member，用于清理过期窗口。
+        /// </summary>
+        public long SortedSetRemoveRangeByScore(string key, double start, double stop, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return db.SortedSetRemoveRangeByScore(key, start, stop);
+        }
+
+        /// <summary>
+        /// 按 score 范围删除 Sorted Set member，用于清理过期窗口。
+        /// </summary>
+        public async Task<long> SortedSetRemoveRangeByScoreAsync(string key, double start, double stop, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.SortedSetRemoveRangeByScoreAsync(key, start, stop);
+        }
+
+        /// <summary>
+        /// 删除指定 Sorted Set member，用于业务失败后的去重回滚。
+        /// </summary>
+        public bool SortedSetRemove(string key, string member, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return db.SortedSetRemove(key, member);
+        }
+
+        /// <summary>
+        /// 删除指定 Sorted Set member，用于业务失败后的去重回滚。
+        /// </summary>
+        public async Task<bool> SortedSetRemoveAsync(string key, string member, int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.SortedSetRemoveAsync(key, member);
+        }
+
         public long SetLength(string key, int? dbIndex = null)
         {
             key = MergeKey(key);
