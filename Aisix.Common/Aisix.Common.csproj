@@ -27,14 +27,14 @@
   </ItemGroup>
   <ItemGroup>
 	<None Include="README.md" Pack="true" PackagePath="\"/>
-    <PackageReference Include="AutoMapper" Version="13.0.1" />
-    <PackageReference Include="IP2Region.Net" Version="2.0.2" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
+    <PackageReference Include="AutoMapper" />
+    <PackageReference Include="IP2Region.Net" />
+    <PackageReference Include="Newtonsoft.Json">
       <TreatAsUsed>true</TreatAsUsed>
     </PackageReference>
-    <PackageReference Include="NLog" Version="5.3.4" />
-    <PackageReference Include="Pluralize.NET" Version="1.0.2" />
-    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.3" />
+    <PackageReference Include="NLog" />
+    <PackageReference Include="Pluralize.NET" />
+    <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 </Project>
