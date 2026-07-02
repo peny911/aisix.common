@@ -144,6 +144,114 @@ namespace Aisix.Common.Redis
         /// <returns>基数估计值（约 0.81% 误差率）</returns>
         Task<long> HyperLogLogLengthAsync(string key, int? dbIndex = null);
         #endregion
+
+        #region Redis Stream 方法
+        /// <summary>
+        /// 添加 Redis Stream 消息，对应 XADD。
+        /// </summary>
+        /// <param name="key">Stream key。</param>
+        /// <param name="values">写入 Stream 的字段和值。</param>
+        /// <param name="messageId">消息 ID，默认由 Redis 自动生成。</param>
+        /// <param name="maxLength">Stream 最大长度，设置后由 Redis 执行裁剪。</param>
+        /// <param name="useApproximateMaxLength">是否使用近似裁剪。</param>
+        /// <param name="commandFlags">Redis 命令标记。</param>
+        /// <param name="dbIndex">数据库索引。</param>
+        /// <returns>Redis 返回的 Stream 消息 ID。</returns>
+        Task<RedisValue> StreamAddAsync(
+            string key,
+            NameValueEntry[] values,
+            RedisValue? messageId = null,
+            int? maxLength = null,
+            bool useApproximateMaxLength = false,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null);
+
+        /// <summary>
+        /// 创建 Redis Stream 消费组，对应 XGROUP CREATE。
+        /// </summary>
+        /// <param name="key">Stream key。</param>
+        /// <param name="groupName">消费组名称。</param>
+        /// <param name="position">消费组起始位置，默认使用 StackExchange.Redis 默认值。</param>
+        /// <param name="createStream">Stream 不存在时是否自动创建。</param>
+        /// <param name="commandFlags">Redis 命令标记。</param>
+        /// <param name="dbIndex">数据库索引。</param>
+        /// <returns>创建成功返回 true。</returns>
+        Task<bool> StreamCreateConsumerGroupAsync(
+            string key,
+            string groupName,
+            RedisValue? position = null,
+            bool createStream = true,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null);
+
+        /// <summary>
+        /// 使用消费组读取 Redis Stream 消息，对应 XREADGROUP。
+        /// </summary>
+        /// <param name="key">Stream key。</param>
+        /// <param name="groupName">消费组名称。</param>
+        /// <param name="consumerName">消费者名称。</param>
+        /// <param name="position">读取位置，读取新消息通常传入 <c>&gt;</c> 或使用默认值。</param>
+        /// <param name="count">最多读取消息数。</param>
+        /// <param name="noAck">是否不进入 pending 且自动确认。</param>
+        /// <param name="commandFlags">Redis 命令标记。</param>
+        /// <param name="dbIndex">数据库索引。</param>
+        /// <returns>读取到的 Stream 消息数组。</returns>
+        Task<StreamEntry[]> StreamReadGroupAsync(
+            string key,
+            string groupName,
+            string consumerName,
+            RedisValue? position = null,
+            int? count = null,
+            bool noAck = false,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null);
+
+        /// <summary>
+        /// 确认 Redis Stream 消息，对应 XACK。
+        /// </summary>
+        /// <param name="key">Stream key。</param>
+        /// <param name="groupName">消费组名称。</param>
+        /// <param name="messageId">要确认的消息 ID。</param>
+        /// <param name="commandFlags">Redis 命令标记。</param>
+        /// <param name="dbIndex">数据库索引。</param>
+        /// <returns>成功确认的消息数量。</returns>
+        Task<long> StreamAcknowledgeAsync(
+            string key,
+            string groupName,
+            RedisValue messageId,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null);
+
+        /// <summary>
+        /// 批量确认 Redis Stream 消息，对应 XACK。
+        /// </summary>
+        /// <param name="key">Stream key。</param>
+        /// <param name="groupName">消费组名称。</param>
+        /// <param name="messageIds">要确认的消息 ID 数组。</param>
+        /// <param name="commandFlags">Redis 命令标记。</param>
+        /// <param name="dbIndex">数据库索引。</param>
+        /// <returns>成功确认的消息数量。</returns>
+        Task<long> StreamAcknowledgeAsync(
+            string key,
+            string groupName,
+            RedisValue[] messageIds,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null);
+
+        /// <summary>
+        /// 删除 Redis Stream 消息，对应 XDEL。
+        /// </summary>
+        /// <param name="key">Stream key。</param>
+        /// <param name="messageIds">要删除的消息 ID 数组。</param>
+        /// <param name="commandFlags">Redis 命令标记。</param>
+        /// <param name="dbIndex">数据库索引。</param>
+        /// <returns>成功删除的消息数量。</returns>
+        Task<long> StreamDeleteAsync(
+            string key,
+            RedisValue[] messageIds,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null);
+        #endregion
         #endregion
     }
 }

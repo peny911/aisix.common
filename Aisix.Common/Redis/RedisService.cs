@@ -757,6 +757,85 @@ namespace Aisix.Common.Redis
             return await db.HyperLogLogLengthAsync(key);
         }
         #endregion
+
+        #region Redis Stream 方法
+        public async Task<RedisValue> StreamAddAsync(
+            string key,
+            NameValueEntry[] values,
+            RedisValue? messageId = null,
+            int? maxLength = null,
+            bool useApproximateMaxLength = false,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.StreamAddAsync(key, values, messageId, maxLength, useApproximateMaxLength, commandFlags);
+        }
+
+        public async Task<bool> StreamCreateConsumerGroupAsync(
+            string key,
+            string groupName,
+            RedisValue? position = null,
+            bool createStream = true,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.StreamCreateConsumerGroupAsync(key, groupName, position, createStream, commandFlags);
+        }
+
+        public async Task<StreamEntry[]> StreamReadGroupAsync(
+            string key,
+            string groupName,
+            string consumerName,
+            RedisValue? position = null,
+            int? count = null,
+            bool noAck = false,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.StreamReadGroupAsync(key, groupName, consumerName, position, count, noAck, commandFlags);
+        }
+
+        public async Task<long> StreamAcknowledgeAsync(
+            string key,
+            string groupName,
+            RedisValue messageId,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.StreamAcknowledgeAsync(key, groupName, messageId, commandFlags);
+        }
+
+        public async Task<long> StreamAcknowledgeAsync(
+            string key,
+            string groupName,
+            RedisValue[] messageIds,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.StreamAcknowledgeAsync(key, groupName, messageIds, commandFlags);
+        }
+
+        public async Task<long> StreamDeleteAsync(
+            string key,
+            RedisValue[] messageIds,
+            CommandFlags commandFlags = CommandFlags.None,
+            int? dbIndex = null)
+        {
+            key = MergeKey(key);
+            var db = GetDatabase(dbIndex);
+            return await db.StreamDeleteAsync(key, messageIds, commandFlags);
+        }
+        #endregion
         #endregion
 
         #region Private methods

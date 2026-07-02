@@ -163,6 +163,50 @@ public class CacheService
 - 当设置为 `false` 时，自动将 `DefaultDatabase` 添加到连接字符串中，适配 Redis 集群模式
 - 在集群模式下，如果尝试切换到非默认数据库，会抛出 `NotSupportedException` 异常
 
+#### Redis 集成测试
+
+`Aisix.Common.Tests` 包含 `RedisService` 集成测试。默认不连接真实 Redis；未设置环境变量时，Redis 集成测试会自动跳过，普通单元测试仍正常执行。
+
+运行全部测试：
+
+```bash
+dotnet test Aisix.Common.Tests/Aisix.Common.Tests.csproj
+```
+
+运行 Redis 集成测试需要设置 `REDIS_TEST_CONNECTION_STRING`：
+
+```bash
+env REDIS_TEST_CONNECTION_STRING='localhost:6379' \
+  dotnet test Aisix.Common.Tests/Aisix.Common.Tests.csproj \
+  --filter FullyQualifiedName~RedisServiceIntegrationTests
+```
+
+带密码示例：
+
+```bash
+env REDIS_TEST_CONNECTION_STRING='127.0.0.1:6379,password=yourpassword' \
+  dotnet test Aisix.Common.Tests/Aisix.Common.Tests.csproj \
+  --filter FullyQualifiedName~RedisServiceIntegrationTests
+```
+
+如果已完成编译，可使用 `--no-build` 加快执行：
+
+```bash
+env REDIS_TEST_CONNECTION_STRING='localhost:6379' \
+  dotnet test Aisix.Common.Tests/Aisix.Common.Tests.csproj --no-build \
+  --filter FullyQualifiedName~RedisServiceIntegrationTests
+```
+
+如需在控制台输出 Redis 集成测试过程，额外设置 `REDIS_TEST_VERBOSE=true`：
+
+```bash
+env REDIS_TEST_CONNECTION_STRING='localhost:6379' REDIS_TEST_VERBOSE=true \
+  dotnet test Aisix.Common.Tests/Aisix.Common.Tests.csproj \
+  --filter FullyQualifiedName~RedisServiceIntegrationTests
+```
+
+注意不要把真实 Redis 密码提交到代码、README、脚本或终端记录中。测试会使用随机前缀创建 key，并在测试结束时清理。
+
 ### 4. IP 地理位置查询
 
 ```csharp
