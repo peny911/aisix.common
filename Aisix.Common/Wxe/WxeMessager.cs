@@ -13,16 +13,24 @@ namespace Aisix.Common.Wxe
     {
         private readonly ILogger _logger = LogManager.GetCurrentClassLogger();
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IWxeMessageSwitch _messageSwitch;
 
-        public WxeMessager(IHttpClientFactory httpClientFactory)
+        public WxeMessager(IHttpClientFactory httpClientFactory, IWxeMessageSwitch messageSwitch)
         {
             _httpClientFactory = httpClientFactory;
+            _messageSwitch = messageSwitch;
         }
 
         public async Task<bool> SendAsync(MessageItem wxe)
         {
             try
             {
+                if (!await _messageSwitch.IsEnabledAsync())
+                {
+                    _logger.Info("Wxe message skipped because dictionary switch is disabled.");
+                    return false;
+                }
+
 #if DEBUG
                 wxe.body = $"【测试】{wxe.body}";
 #endif

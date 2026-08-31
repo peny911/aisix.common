@@ -18,6 +18,7 @@ namespace Aisix.Common.Wxe
                 c.DefaultRequestHeaders.Add("token", "LEoIdd0Ovnbnv4x4Kevq8EJdBxaDQWUW");
             });
 
+            services.AddSingleton<IWxeMessageSwitch, AlwaysEnabledWxeMessageSwitch>();
             services.AddSingleton<IWxeMessager, WxeMessager>();
         }
     }
